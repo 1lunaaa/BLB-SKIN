@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "core/TakeRecording.h"
 
 #include <algorithm>
@@ -122,39 +123,26 @@ std::vector<Part> loopPasses (const Placement& p, std::int64_t loopStart, std::i
     return out;
 }
 
-int takeTrack (const Song& song, int insert, std::int64_t start, std::int64_t end)
+// BLB: which Playlist track a take goes on (the choice; takeTrack below only adds a temporary log)
+static int takeTrackPick (const Song& song, int insert, std::int64_t start, std::int64_t end)
 {
     const auto freeAt = [&] (int track) {
         return std::none_of (song.playlist.begin(), song.playlist.end(), [&] (const Clip& c) { return c.track == track && c.start < end && c.end() > start; });
     };
     if (insert > 0)
     {
+        // the audio track linked to this insert, when it is free there (a busy one gets a new track: FL's lanes)
         for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
         {
             const auto& pt = song.playlistTracks[(std::size_t) t];
             if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert && freeAt (t))
                 return t;
         }
+        // BLB: an audio track not linked to any insert yet (a voice track just created) takes the recording
         for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
         {
             const auto& pt = song.playlistTracks[(std::size_t) t];
-            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert)
-                return t;
-        }
-        for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
-        {
-            const auto& pt = song.playlistTracks[(std::size_t) t];
-            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack <= 0)
-                return t;
-        }
-    }
-
-    if (insert > 0)
-    {
-        for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
-        {
-            const auto& pt = song.playlistTracks[(std::size_t) t];
-            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert && freeAt (t))
+            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack <= 0 && freeAt (t))
                 return t;
         }
     }
@@ -165,6 +153,21 @@ int takeTrack (const Song& song, int insert, std::int64_t start, std::int64_t en
     while (next < (int) song.playlistTracks.size() && song.playlistTracks[(std::size_t) next].mode != PlaylistTrackMode::unassigned)
         ++next;
     return next;
+}
+
+int takeTrack (const Song& song, int insert, std::int64_t start, std::int64_t end)
+{
+    const auto picked = takeTrackPick (song, insert, start, end);
+    // BLB_REC_DEBUG: temporary log, delete this block once recording per track works
+    if (std::FILE* f = std::fopen ("C:/dev/BLB-SKIN/rec_debug.log", "a"))
+    {
+        std::fprintf (f, "takeTrack insert=%d start=%lld end=%lld -> track=%d | playlistTracks:", insert, (long long) start, (long long) end, picked);
+        for (std::size_t i = 0; i < song.playlistTracks.size() && i < 40; ++i)
+            std::fprintf (f, " [%d:mode%d:ins%d]", (int) i, (int) song.playlistTracks[i].mode, song.playlistTracks[i].mixerTrack);
+        std::fprintf (f, "\n");
+        std::fclose (f);
+    }
+    return picked;
 }
 
 void linkTakeTrack (Song& song, int track, int insert)

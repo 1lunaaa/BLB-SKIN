@@ -58,7 +58,7 @@ class PlaylistComponent final : public juce::Component,
 public:
     std::function<void (int)> onOpenTrackFx;
     std::function<void (int)> onOpenTrackInput;
-    int getSelectedTrack() const noexcept { return 0; }
+    int getSelectedTrack() const noexcept { return currentTrack; }
 
 public:
     // What the pencil paints (chosen in the Picker): the current pattern, an audio clip or an automation clip.
