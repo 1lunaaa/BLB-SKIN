@@ -2784,16 +2784,30 @@ void MainComponent::toggleRecording()
         if (s.playlistTracks.empty())
             return;
         const int selPl = juce::jlimit (0, (int) s.playlistTracks.size() - 1, playlistArea.getSelectedTrack());
-        const int insertIdx = s.playlistTracks[(std::size_t) selPl].mixerTrack;
+        int insertIdx = s.playlistTracks[(std::size_t) selPl].mixerTrack;
         if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
-            return;
+        {
+            insertIdx = juce::jlimit (1, std::max (1, (int) s.mixer.size() - 1), selPl + 1);
+            engine.editSong ([selPl, insertIdx] (Song& song) {
+                if (selPl >= 0 && selPl < (int) song.playlistTracks.size())
+                {
+                    song.playlistTracks[(std::size_t) selPl].mode = PlaylistTrackMode::audio;
+                    song.playlistTracks[(std::size_t) selPl].mixerTrack = insertIdx;
+                }
+            });
+        }
         if (! engine.hasAudioInput())
             engine.openAudioInput();
-        const auto& mt = s.mixer[(std::size_t) insertIdx];
-        if (mt.inputChannel < 0 && ! engine.getInputChannelNames().empty())
+        for (int idx = 1; idx < (int) s.mixer.size(); ++idx)
+        {
+            if (idx == insertIdx)
+                continue;
+            engine.setInsertInput (idx, -1, false);
+            engine.setInsertArmed (idx, false);
+        }
+        if (! engine.getInputChannelNames().empty())
             engine.setInsertInput (insertIdx, 0, false);
-        if (! engine.isInsertArmed (insertIdx))
-            engine.setInsertArmed (insertIdx, true);
+        engine.setInsertArmed (insertIdx, true);
     };
 
     if (! engine.getRecordOptions().askWhatToRecord || ! persistent)

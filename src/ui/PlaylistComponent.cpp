@@ -2967,7 +2967,56 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
             }
             else
                 selectedTracks = { track };
+                if (e.getNumberOfClicks() == 1 && track >= 0 && track < (int) engine.getSong().playlistTracks.size())
+                {
+                    const auto& s = engine.getSong();
+                    int insertIdx = s.playlistTracks[(std::size_t) track].mixerTrack;
+                    if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
+                    {
+                        insertIdx = juce::jlimit (1, std::max (1, (int) s.mixer.size() - 1), track + 1);
+                        engine.editSong ([track, insertIdx] (Song& song) {
+                            if (track < 0 || track >= (int) song.playlistTracks.size())
+                                return;
+                            song.playlistTracks[(std::size_t) track].mode = PlaylistTrackMode::audio;
+                            song.playlistTracks[(std::size_t) track].mixerTrack = insertIdx;
+                        });
+                    }
+                    for (int m = 1; m < (int) engine.getSong().mixer.size(); ++m)
+                    {
+                        if (m == insertIdx)
+                            continue;
+                        engine.setInsertInput (m, -1, false);
+                        engine.setInsertArmed (m, false);
+                    }
+                    engine.setInsertInput (insertIdx, 0, false);
+                    engine.setInsertArmed (insertIdx, true);
+                }
             currentTrack = track;
+            if (track >= 0 && track < (int) engine.getSong().playlistTracks.size())
+            {
+                const auto& s = engine.getSong();
+                int insertIdx = s.playlistTracks[(std::size_t) track].mixerTrack;
+                if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
+                {
+                    insertIdx = juce::jlimit (1, std::max (1, (int) s.mixer.size() - 1), track + 1);
+                    engine.editSong ([track, insertIdx] (Song& song) {
+                        song.playlistTracks[(std::size_t) track].mode = PlaylistTrackMode::audio;
+                        song.playlistTracks[(std::size_t) track].mixerTrack = insertIdx;
+                    });
+                }
+                if (! engine.hasAudioInput())
+                    engine.openAudioInput();
+                for (int m = 1; m < (int) s.mixer.size(); ++m)
+                {
+                    if (m == insertIdx)
+                        continue;
+                    engine.setInsertInput (m, -1, false);
+                    engine.setInsertArmed (m, false);
+                }
+                if (! engine.getInputChannelNames().empty())
+                    engine.setInsertInput (insertIdx, 0, false);
+                engine.setInsertArmed (insertIdx, true);
+            }
             repaint (0, tracksTop(), headerWidth, getHeight() - tracksTop());
         }
         return;
@@ -6538,64 +6587,16 @@ ui::Hint PlaylistComponent::hintAt (juce::Point<int> p)
 
 void PlaylistComponent::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (trackZoomHandle().contains (e.getPosition())) // the vertical zoom handle: back to 100%
+    if (trackZoomHandle().contains (e.getPosition()))
     {
         setTrackZoom (1.0, tracksTop());
         return;
     }
-
-    // double-click a track divider: back to the default height
     if (const auto divider = dividerAt (e.getPosition()); divider >= 0)
     {
         setTrackHeights ({ divider }, trackHeight);
         return;
     }
-
-    // double-click a track header: open the source of the track's first clip (FL); empty tracks: rename
-    if (e.x < headerWidth && e.y >= tracksTop() && e.y < gridArea().getBottom() && e.mods.isLeftButtonDown())
-    {
-        const auto track = yToTrack (e.y);
-
-        if (trackLed (track).expanded (3).contains (e.getPosition()) || trackArrow (track).contains (e.getPosition())
-            || trackArm (track).expanded (2).contains (e.getPosition()) || trackInput (track).expanded (2).contains (e.getPosition()))
-            return;
-
-        const auto& plTracks = engine.getSong().playlistTracks;
-        if (track >= 0 && track < (int) plTracks.size()
-            && plTracks[(std::size_t) track].mode == PlaylistTrackMode::instrument
-            && plTracks[(std::size_t) track].channel >= 0)
-        {
-            const auto channel = plTracks[(std::size_t) track].channel;
-            engine.setSelectedChannel (channel);
-            if (onOpenPlugin)
-                onOpenPlugin (channel);
-            return;
-        }
-
-        const auto& playlist = engine.getSong().playlist;
-        int first = -1;
-        for (int i = 0; i < (int) playlist.size(); ++i)
-            if (playlist[(std::size_t) i].track == track && (first < 0 || playlist[(std::size_t) i].start < playlist[(std::size_t) first].start))
-                first = i;
-
-        if (first >= 0)
-            openClipSource (first, e.mods.isAltDown());
-        else if (const auto& plTracks = engine.getSong().playlistTracks;
-                 track >= 0 && track < (int) plTracks.size() && plTracks[(std::size_t) track].mode == PlaylistTrackMode::audio
-                 && plTracks[(std::size_t) track].mixerTrack > 0 && onOpenMixerTrack)
-            onOpenMixerTrack (plTracks[(std::size_t) track].mixerTrack); // an empty audio track: its mixer track, not "Rename and color"
-        else
-            renameTrack (track);
-        return;
-    }
-
-    bool edge = false;
-    const auto hit = gridArea().contains (e.getPosition()) ? clipAt (e.x, e.y, edge) : -1;
-
-    if (hit < 0)
-        return;
-
-    openClipSource (hit, e.mods.isAltDown());
 }
 
 void PlaylistComponent::openClipSource (int hit, bool other)

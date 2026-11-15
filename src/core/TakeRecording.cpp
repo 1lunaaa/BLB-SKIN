@@ -127,8 +127,28 @@ int takeTrack (const Song& song, int insert, std::int64_t start, std::int64_t en
     const auto freeAt = [&] (int track) {
         return std::none_of (song.playlist.begin(), song.playlist.end(), [&] (const Clip& c) { return c.track == track && c.start < end && c.end() > start; });
     };
-    if (! song.playlistTracks.empty())
-        return 0;
+    if (insert > 0)
+    {
+        for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
+        {
+            const auto& pt = song.playlistTracks[(std::size_t) t];
+            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert && freeAt (t))
+                return t;
+        }
+        for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
+        {
+            const auto& pt = song.playlistTracks[(std::size_t) t];
+            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert)
+                return t;
+        }
+        for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
+        {
+            const auto& pt = song.playlistTracks[(std::size_t) t];
+            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack <= 0)
+                return t;
+        }
+    }
+
     if (insert > 0)
     {
         for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
