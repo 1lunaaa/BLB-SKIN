@@ -57,6 +57,7 @@ class PlaylistComponent final : public juce::Component,
 {
 public:
     std::function<void (int)> onOpenTrackFx;
+    std::function<void (int)> onOpenTrackInput;
     int getSelectedTrack() const noexcept { return 0; }
 
 public:
@@ -586,22 +587,49 @@ public:
 
         playlist.onOpenTrackFx = [this] (int trackIdx) {
             fxDrawer.setTrack (trackIdx + 1);
+            fxDrawer.setMode (BandLabFxDrawer::Mode::effects);
+            toggleFxDrawer (true);
+        };
+        playlist.onOpenTrackInput = [this] (int trackIdx) {
+            fxDrawer.setTrack (trackIdx + 1);
+            fxDrawer.setMode (BandLabFxDrawer::Mode::input);
             toggleFxDrawer (true);
         };
 
-        for (auto* b : { &fxTabButton, &editorTabButton, &soundsTabButton })
+        for (auto* b : { &autoPitchTabButton, &fxTabButton, &editorTabButton, &soundsTabButton })
         {
             b->setClickingTogglesState (false);
             b->setWantsKeyboardFocus (false);
             addAndMakeVisible (*b);
         }
+        autoPitchTabButton.setButtonText ("AutoPitch");
         fxTabButton.setButtonText (tr ("Fx Efectos"));
         editorTabButton.setButtonText (tr ("Editor"));
         soundsTabButton.setButtonText (tr ("BandLab Sounds / Ritmos"));
 
+        autoPitchTabButton.onClick = [this] {
+            const int t = juce::jmax (1, playlist.getSelectedTrack() + 1);
+            fxDrawer.setTrack (t);
+            const bool alreadyInput = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input;
+            if (alreadyInput)
+                toggleFxDrawer (false);
+            else
+            {
+                fxDrawer.setMode (BandLabFxDrawer::Mode::input);
+                toggleFxDrawer (true);
+            }
+        };
         fxTabButton.onClick = [this] {
-            fxDrawer.setTrack (juce::jmax (1, playlist.getSelectedTrack() + 1));
-            toggleFxDrawer (! fxOpen);
+            const int t = juce::jmax (1, playlist.getSelectedTrack() + 1);
+            fxDrawer.setTrack (t);
+            const bool alreadyFx = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::effects;
+            if (alreadyFx)
+                toggleFxDrawer (false);
+            else
+            {
+                fxDrawer.setMode (BandLabFxDrawer::Mode::effects);
+                toggleFxDrawer (true);
+            }
         };
         editorTabButton.onClick = [this] { if (onOpenEditor) onOpenEditor(); };
         soundsTabButton.onClick = [this] { toggleSoundsDrawer (! soundsOpen); };
@@ -628,11 +656,13 @@ public:
     void syncTrackDependentButtons()
     {
         const bool hasTracks = ! engine.getSong().playlistTracks.empty();
+        autoPitchTabButton.setVisible (hasTracks);
         fxTabButton.setVisible (hasTracks);
         editorTabButton.setVisible (hasTracks);
         if (! hasTracks && fxOpen)
         {
             fxOpen = false;
+            autoPitchTabButton.setToggleState (false, juce::dontSendNotification);
             fxTabButton.setToggleState (false, juce::dontSendNotification);
             fxDrawer.setVisible (false);
         }
@@ -652,8 +682,11 @@ public:
     void toggleFxDrawer (bool open)
     {
         fxOpen = open;
-        fxTabButton.setToggleState (fxOpen, juce::dontSendNotification);
+        autoPitchTabButton.setToggleState (fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input, juce::dontSendNotification);
+        fxTabButton.setToggleState (fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::effects, juce::dontSendNotification);
         fxDrawer.setVisible (fxOpen);
+        if (! fxOpen)
+            fxDrawer.setMode (BandLabFxDrawer::Mode::effects);
         resized();
         repaint();
     }
@@ -697,9 +730,16 @@ public:
         auto bottomBar = area.removeFromBottom (bottomBarHeight);
         const int pad = 5;
         auto leftGroup = bottomBar.reduced (10, pad);
+        if (autoPitchTabButton.isVisible())
+        {
+            autoPitchTabButton.setBounds (leftGroup.removeFromLeft (108));
+            leftGroup.removeFromLeft (8);
+        }
         if (fxTabButton.isVisible())
+        {
             fxTabButton.setBounds (leftGroup.removeFromLeft (104));
-        leftGroup.removeFromLeft (8);
+            leftGroup.removeFromLeft (8);
+        }
         if (editorTabButton.isVisible())
             editorTabButton.setBounds (leftGroup.removeFromLeft (96));
         soundsTabButton.setBounds (leftGroup.removeFromRight (196));
@@ -711,7 +751,8 @@ public:
         }
         if (fxOpen)
         {
-            fxDrawer.setBounds (area.removeFromBottom (juce::jmin (fxDrawerHeight, area.getHeight() / 2)));
+            const int desiredH = (fxDrawer.getMode() == BandLabFxDrawer::Mode::input) ? 268 : fxDrawerHeight;
+            fxDrawer.setBounds (area.removeFromBottom (juce::jmin (desiredH, (int) (area.getHeight() * 0.62f))));
         }
         if (clipGrid != nullptr && gridView != GridView::song)
         {
@@ -761,7 +802,7 @@ private:
     PlaylistComponent& playlist;
     BandLabSoundsDrawer soundsDrawer;
     BandLabFxDrawer fxDrawer;
-    juce::TextButton fxTabButton, editorTabButton, soundsTabButton;
+    juce::TextButton autoPitchTabButton, fxTabButton, editorTabButton, soundsTabButton;
     bool soundsOpen = false;
     bool fxOpen = false;
     int titleLeft = 0;

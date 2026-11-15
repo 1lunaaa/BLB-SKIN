@@ -1854,14 +1854,19 @@ void PlaylistComponent::paint (juce::Graphics& g)
                     const float pan = hasMixer ? song.mixer[(std::size_t) insertIdx].pan : 0.0f;
                     const bool soloed = hasMixer && song.mixer[(std::size_t) insertIdx].solo;
 
-                    // Top row: number + name on left, M and S buttons on right
+                    // Top row: clickable mic icon + number + name on left, M and S buttons on right
+                    const bool micActive = hasMixer && (song.mixer[(std::size_t) insertIdx].inputChannel >= 0 || engine.isInsertArmed (insertIdx));
+                    const auto micBox = juce::Rectangle<float> ((float) textLeft, card.getY() + 2.0f, 16.0f, 16.0f);
+                    icons::draw (g, Icon::mic, micBox, micActive ? colour::warning : colour::textSecondary);
+
+                    const int titleX = textLeft + 18;
                     const auto numStr = juce::String (t + 1).paddedLeft ('0', 2) + " ";
                     const auto titleStr = numStr + (custom ? juce::String::fromUTF8 (song.playlistTracks[(std::size_t) t].name.c_str())
                                                            : tr ("Pista {0}", { juce::String (t + 1) }));
                     g.setColour (muted ? colour::textDisabled : colour::textPrimary);
                     g.setFont (font (type::smallSize, true));
-                    textcache::drawFittedText (g, titleStr, textLeft, (int) card.getY(),
-                                               juce::jmax (20, (int) card.getRight() - textLeft - 48), 20,
+                    textcache::drawFittedText (g, titleStr, titleX, (int) card.getY(),
+                                               juce::jmax (20, (int) card.getRight() - titleX - 48), 20,
                                                juce::Justification::centredLeft, 1, 0.85f);
 
                     // M and S pill buttons
@@ -2843,6 +2848,7 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
         if (th >= 56 && e.mods.isLeftButtonDown() && y <= e.y && e.y <= y + th)
         {
             const auto card = juce::Rectangle<float> (2.0f, (float) y + 1.0f, (float) headerWidth - 4.0f, (float) th - 3.0f).reduced (6.0f, 4.0f);
+            const auto micBox = juce::Rectangle<float> (card.getX(), card.getY(), 22.0f, 20.0f);
             const auto mBox = juce::Rectangle<float> (card.getRight() - 44.0f, card.getY() + 1.0f, 20.0f, 18.0f);
             const auto sBox = juce::Rectangle<float> (card.getRight() - 21.0f, card.getY() + 1.0f, 20.0f, 18.0f);
             const auto fxBox = juce::Rectangle<float> (card.getX(), card.getY() + 23.0f, 52.0f, 17.0f);
@@ -2853,6 +2859,12 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
             const auto& song = engine.getSong();
             const int insertIdx = track < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) track].mixerTrack : -1;
 
+            if (micBox.expanded (2.0f).contains (e.position) && insertIdx > 0)
+            {
+                if (onOpenTrackInput)
+                    onOpenTrackInput (track);
+                return;
+            }
             if (mBox.expanded (2.0f).contains (e.position))
             {
                 editTrack (track, [] (PlaylistTrack& t) { t.muted = ! t.muted; });

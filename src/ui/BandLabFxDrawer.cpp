@@ -1,6 +1,7 @@
 #include "ui/BandLabFxDrawer.h"
 
 #include "core/ValueMath.h"
+#include "engine/PluginHost.h"
 #include "ui/Icons.h"
 #include "ui/MixerComponent.h"
 
@@ -14,47 +15,301 @@ BandLabFxDrawer::BandLabFxDrawer (AudioEngine& e)
 
 BandLabFxDrawer::~BandLabFxDrawer()
 {
+    stopTimer();
+    clearEmbeddedEditor();
     engine.removeChangeListener (this);
+}
+
+void BandLabFxDrawer::clearEmbeddedEditor()
+{
+    if (embeddedEditor != nullptr)
+    {
+        removeChildComponent (embeddedEditor.get());
+        embeddedEditor.reset();
+    }
+    hostedEffectOwner.reset();
+}
+
+juce::File BandLabFxDrawer::locateAutoPitchBundle()
+{
+    const auto exeDir = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory();
+    const juce::StringArray candidates {
+        exeDir.getChildFile ("plugins/BLP AutoPitch.vst3").getFullPathName(),
+        exeDir.getChildFile ("plugins/AutoPitch.vst3").getFullPathName(),
+        juce::File::getCurrentWorkingDirectory().getChildFile ("plugins/BLP AutoPitch.vst3").getFullPathName(),
+        juce::File::getCurrentWorkingDirectory().getChildFile ("build/LYNX_artefacts/Debug/plugins/BLP AutoPitch.vst3").getFullPathName(),
+        juce::File ("C:/dev/BLB-SKIN/build/LYNX_artefacts/Debug/plugins/BLP AutoPitch.vst3").getFullPathName(),
+        juce::File ("C:/dev/BLB-SKIN/plugins/BLP AutoPitch.vst3").getFullPathName()
+    };
+    for (const auto& path : candidates)
+    {
+        juce::File f (path);
+        if (f.exists())
+            return f;
+    }
+    return {};
+}
+
+int BandLabFxDrawer::findAutoPitchSlot() const
+{
+    const auto& song = engine.getSong();
+    if (track < 0 || track >= (int) song.mixer.size())
+        return -1;
+    const auto& effects = song.mixer[(std::size_t) track].effects;
+    for (int i = 0; i < (int) effects.size(); ++i)
+    {
+        const auto& sl = effects[(std::size_t) i];
+        if (sl.kind == EffectKind::plugin)
+        {
+            const auto nm = juce::String::fromUTF8 (sl.plugin.name.c_str()).toLowerCase();
+            const auto id = juce::String::fromUTF8 (sl.plugin.id.c_str()).toLowerCase();
+            if (nm.contains ("autopitch") || id.contains ("autopitch"))
+                return i;
+        }
+    }
+    return -1;
+}
+
+void BandLabFxDrawer::ensureAutoPitchOnTrack()
+{
+    if (track <= 0)
+        return;
+
+    if (findAutoPitchSlot() >= 0)
+    {
+        syncEmbeddedEditor();
+        return;
+    }
+
+    const auto bundle = locateAutoPitchBundle();
+    if (! bundle.exists())
+    {
+        autoPitchStatus = tr ("No se encontro plugins/BLP AutoPitch.vst3 junto al programa.");
+        repaint();
+        return;
+    }
+
+    auto& host = engine.getPluginHost();
+    juce::PluginDescription matchedDesc;
+    bool found = false;
+
+    for (const auto& d : host.getKnownPlugins().getTypes())
+    {
+        if (d.fileOrIdentifier == bundle.getFullPathName()
+            || d.name.containsIgnoreCase ("AutoPitch"))
+        {
+            matchedDesc = d;
+            found = true;
+            break;
+        }
+    }
+
+    if (! found)
+    {
+        host.addPluginFile (bundle);
+        for (const auto& d : host.getKnownPlugins().getTypes())
+        {
+            if (d.fileOrIdentifier == bundle.getFullPathName()
+                || d.name.containsIgnoreCase ("AutoPitch"))
+            {
+                matchedDesc = d;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (! found)
+    {
+        autoPitchStatus = tr ("No se pudo leer el modulo VST3: ") + bundle.getFileName();
+        repaint();
+        return;
+    }
+
+    autoPitchStatus.clear();
+    engine.editSong ([this, matchedDesc] (Song& s) {
+        if (s.mixer.empty())
+            s.mixer = Song::defaultMixer (0);
+        if (track <= 0 || track >= (int) s.mixer.size())
+            return;
+
+        auto& effects = s.mixer[(std::size_t) track].effects;
+        for (const auto& existing : effects)
+            if (existing.kind == EffectKind::plugin && juce::String (existing.plugin.name).containsIgnoreCase ("AutoPitch"))
+                return;
+
+        EffectSlot slot;
+        slot.kind = EffectKind::plugin;
+        slot.enabled = true;
+        slot.mix = 1.0f;
+        slot.plugin.id = matchedDesc.createIdentifierString().toStdString();
+        slot.plugin.name = matchedDesc.name.toStdString();
+        effects.insert (effects.begin(), std::move (slot));
+    });
+
+    syncEmbeddedEditor();
+}
+
+void BandLabFxDrawer::syncEmbeddedEditor()
+{
+    if (! isVisible() || mode != Mode::input)
+    {
+        clearEmbeddedEditor();
+        return;
+    }
+
+    const int slotIdx = findAutoPitchSlot();
+    if (slotIdx < 0)
+    {
+        clearEmbeddedEditor();
+        return;
+    }
+
+    auto fx = engine.getEffect (track, slotIdx);
+    auto* pe = dynamic_cast<PluginEffect*> (fx.get());
+    if (pe == nullptr || pe->hasCrashed())
+    {
+        clearEmbeddedEditor();
+        return;
+    }
+
+    if (hostedEffectOwner.get() == fx.get() && embeddedEditor != nullptr)
+    {
+        resized();
+        return;
+    }
+
+    clearEmbeddedEditor();
+    hostedEffectOwner = fx;
+
+    auto& instance = pe->getInstance();
+    juce::AudioProcessorEditor* ed = instance.createEditorIfNeeded();
+    if (ed == nullptr)
+        ed = new juce::GenericAudioProcessorEditor (instance);
+
+    embeddedEditor.reset (ed);
+    addAndMakeVisible (*embeddedEditor);
+    resized();
+}
+
+void BandLabFxDrawer::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    if (isVisible() && mode == Mode::input)
+        syncEmbeddedEditor();
+    repaint();
 }
 
 void BandLabFxDrawer::setTrack (int t)
 {
-    track = juce::jmax (0, t);
+    const int next = juce::jmax (0, t);
+    if (track != next)
+    {
+        track = next;
+        clearEmbeddedEditor();
+    }
+    if (isVisible() && mode == Mode::input)
+        ensureAutoPitchOnTrack();
     repaint();
+}
+
+void BandLabFxDrawer::setMode (Mode newMode)
+{
+    mode = newMode;
+    if (mode == Mode::input && isVisible())
+    {
+        startTimerHz (30);
+        ensureAutoPitchOnTrack();
+    }
+    else
+    {
+        stopTimer();
+        clearEmbeddedEditor();
+    }
+
+    resized();
+    repaint();
+}
+
+void BandLabFxDrawer::timerCallback()
+{
+    if (! isVisible() || mode != Mode::input)
+    {
+        stopTimer();
+        return;
+    }
+    const float p0 = engine.takeInputPeak (track, 0);
+    const float p1 = engine.takeInputPeak (track, 1);
+    const float peak = juce::jmax (p0, p1);
+    liveInputPeak = juce::jmax (peak, liveInputPeak * 0.82f);
+    if (liveInputPeak > 0.002f || peak > 0.002f)
+        repaint (20, 155, 240, 50);
+}
+
+int BandLabFxDrawer::effectsStartX() const
+{
+    if (mode != Mode::input)
+        return 24;
+    if (embeddedEditor != nullptr)
+        return embeddedEditor->getRight() + 14;
+    return 268;
+}
+
+std::vector<int> BandLabFxDrawer::visibleEffectSlotIndices() const
+{
+    std::vector<int> out;
+    const auto& song = engine.getSong();
+    if (track < 0 || track >= (int) song.mixer.size())
+        return out;
+    const int apSlot = (mode == Mode::input) ? findAutoPitchSlot() : -1;
+    const auto& effects = song.mixer[(std::size_t) track].effects;
+    for (int i = 0; i < (int) effects.size(); ++i)
+        if (i != apSlot)
+            out.push_back (i);
+    return out;
 }
 
 juce::Rectangle<int> BandLabFxDrawer::addCardBounds() const
 {
-    const auto& song = engine.getSong();
-    int count = 0;
-    if (track >= 0 && track < (int) song.mixer.size())
-        count = (int) song.mixer[(std::size_t) track].effects.size();
-
+    const auto indices = visibleEffectSlotIndices();
+    const int count = (int) indices.size();
     const int cardW = 146;
     const int gap = 10;
-    const int x = 24 + count * (cardW + gap);
+    const int x = effectsStartX() + count * (cardW + gap);
     return { x, 46, cardW, juce::jmax (96, getHeight() - 62) };
 }
 
 int BandLabFxDrawer::slotCardAt (juce::Point<int> p) const
 {
-    const auto& song = engine.getSong();
-    if (track < 0 || track >= (int) song.mixer.size())
-        return -1;
-    const int count = (int) song.mixer[(std::size_t) track].effects.size();
+    const auto indices = visibleEffectSlotIndices();
     const int cardW = 146;
     const int gap = 10;
-    for (int i = 0; i < count; ++i)
+    const int startX = effectsStartX();
+    for (int idx = 0; idx < (int) indices.size(); ++idx)
     {
-        const juce::Rectangle<int> r (24 + i * (cardW + gap), 46, cardW, juce::jmax (96, getHeight() - 62));
+        const juce::Rectangle<int> r (startX + idx * (cardW + gap), 46, cardW, juce::jmax (96, getHeight() - 62));
         if (r.contains (p))
-            return i;
+            return indices[(std::size_t) idx];
     }
     return -1;
 }
 
 void BandLabFxDrawer::resized()
 {
+    if (isVisible() && mode == Mode::input && ! isTimerRunning())
+        startTimerHz (30);
+
+    if (embeddedEditor != nullptr)
+    {
+        const int rightX = getWidth() - 136;
+        const int availW = juce::jmax (260, rightX - 280);
+        const int availH = juce::jmax (140, getHeight() - 52);
+        const int ew = embeddedEditor->getWidth() > 0 ? embeddedEditor->getWidth() : 460;
+        const int eh = embeddedEditor->getHeight() > 0 ? embeddedEditor->getHeight() : availH;
+        const int w = juce::jmin (availW, ew);
+        const int h = juce::jmin (availH, eh);
+        const int y = 42 + juce::jmax (0, (availH - h) / 2);
+        embeddedEditor->setBounds (270, y, w, h);
+    }
     repaint();
 }
 
@@ -66,66 +321,152 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
     g.fillRect (0, 0, getWidth(), 1);
 
     const auto& song = engine.getSong();
-    juce::String trackTitle = tr ("Pista {0}", { juce::String (track + 1) });
-    if (track >= 0 && track < (int) song.playlistTracks.size() && ! song.playlistTracks[(std::size_t) track].name.empty())
-        trackTitle = juce::String::fromUTF8 (song.playlistTracks[(std::size_t) track].name.c_str());
+    juce::String trackTitle = tr ("Pista {0}", { juce::String (track) });
+    const int plIdx = track - 1;
+    if (plIdx >= 0 && plIdx < (int) song.playlistTracks.size() && ! song.playlistTracks[(std::size_t) plIdx].name.empty())
+        trackTitle = juce::String::fromUTF8 (song.playlistTracks[(std::size_t) plIdx].name.c_str());
 
-    // Encabezado del panel inferior BandLab
     const auto cb = closeBtnBounds().toFloat();
     fillRoundRect (g, cb, 11.0f, hoverClose ? colour::bg4 : colour::bg3);
     g.setColour (colour::textPrimary);
     g.setFont (font (type::smallSize, true));
     g.drawText ("X", cb.toNearestInt(), juce::Justification::centred, false);
 
+    icons::draw (g, Icon::mic, { 40.0f, 12.0f, 14.0f, 14.0f }, colour::warning);
+
     g.setColour (colour::textPrimary);
     g.setFont (font (type::title, true));
-    g.drawText (trackTitle, 40, 7, 260, 24, juce::Justification::centredLeft, true);
+    g.drawText (trackTitle, 60, 7, 260, 24, juce::Justification::centredLeft, true);
 
-    // Ranuras de efectos (slots) del insert seleccionado
-    const std::vector<EffectSlot>* slots = nullptr;
-    if (track >= 0 && track < (int) song.mixer.size())
-        slots = &song.mixer[(std::size_t) track].effects;
+    if (mode == Mode::input)
+    {
+        const bool hasMt = (track >= 0 && track < (int) song.mixer.size());
+        const int inCh = hasMt ? song.mixer[(std::size_t) track].inputChannel : -1;
+        const bool inStereo = hasMt ? song.mixer[(std::size_t) track].inputStereo : false;
+        const bool monOn = hasMt && song.mixer[(std::size_t) track].monitor != InputMonitor::off;
 
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::caption, true));
+        g.drawText (tr ("Entrada"), 24, 46, 200, 16, juce::Justification::centredLeft, false);
+
+        juce::String devName = tr ("Predeterminado - Microfono");
+        if (auto* dev = engine.getDeviceManager().getCurrentAudioDevice())
+        {
+            if (dev->getName().isNotEmpty())
+                devName = dev->getName();
+        }
+        else if (! engine.hasAudioInput())
+        {
+            devName = tr ("Seleccionar microfono...");
+        }
+
+        const auto devBox = inputDeviceBoxBounds().toFloat();
+        fillRoundRect (g, devBox, radius::sm, hoverInputPart == 1 ? colour::bg3 : colour::bg2);
+        g.setColour (colour::borderStrong);
+        g.drawRoundedRectangle (devBox.reduced (0.5f), radius::sm, 1.0f);
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::smallSize, false));
+        g.drawFittedText (devName, inputDeviceBoxBounds().reduced (10, 0).withTrimmedRight (20),
+                          juce::Justification::centredLeft, 1, 0.85f);
+        icons::draw (g, Icon::chevronDown, devBox.withLeft (devBox.getRight() - 22.0f).withSizeKeepingCentre (12.0f, 12.0f), colour::textSecondary);
+
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::caption, true));
+        g.drawText (tr ("Canal"), 24, 102, 200, 16, juce::Justification::centredLeft, false);
+
+        juce::String chLabel = tr ("Sin entrada (ninguno)");
+        const auto chNames = engine.getInputChannelNames();
+        if (inCh >= 0 && inCh < (int) chNames.size())
+        {
+            if (inStereo && inCh + 1 < (int) chNames.size())
+                chLabel = tr ("Canal {0} + {1}", { juce::String (inCh + 1), juce::String (inCh + 2) });
+            else
+                chLabel = tr ("Canal {0}", { juce::String (inCh + 1) }) + " (" + juce::String::fromUTF8 (chNames[(std::size_t) inCh].c_str()) + ")";
+        }
+        else if (inCh >= 0)
+        {
+            chLabel = inStereo ? tr ("Canal {0} + {1}", { juce::String (inCh + 1), juce::String (inCh + 2) })
+                               : tr ("Canal {0}", { juce::String (inCh + 1) });
+        }
+
+        const auto chBox = inputChannelBoxBounds().toFloat();
+        fillRoundRect (g, chBox, radius::sm, hoverInputPart == 2 ? colour::bg3 : colour::bg2);
+        g.setColour (inCh >= 0 ? colour::accent : colour::borderStrong);
+        g.drawRoundedRectangle (chBox.reduced (0.5f), radius::sm, 1.0f);
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::smallSize, false));
+        g.drawFittedText (chLabel, inputChannelBoxBounds().reduced (10, 0).withTrimmedRight (20),
+                          juce::Justification::centredLeft, 1, 0.85f);
+        icons::draw (g, Icon::chevronDown, chBox.withLeft (chBox.getRight() - 22.0f).withSizeKeepingCentre (12.0f, 12.0f), colour::textSecondary);
+
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::caption, true));
+        g.drawText (tr ("Nivel de entrada"), 24, 162, 104, 16, juce::Justification::centredLeft, false);
+
+        const auto meterBg = juce::Rectangle<float> (24.0f, 184.0f, 96.0f, 5.0f);
+        fillRoundRect (g, meterBg, 2.5f, colour::bg3);
+        const float lvl = juce::jlimit (0.0f, 1.0f, std::sqrt (liveInputPeak));
+        if (lvl > 0.01f)
+            fillRoundRect (g, meterBg.withWidth (meterBg.getWidth() * lvl), 2.5f, lvl > 0.88f ? colour::accent : juce::Colour (0xff22c55e));
+
+        const auto monR = monitorBtnBounds().toFloat();
+        fillRoundRect (g, monR, monR.getHeight() * 0.5f, monOn ? colour::accent : (hoverInputPart == 3 ? colour::bg4 : colour::bg3));
+        g.setColour (monOn ? colour::onAccent : colour::borderStrong);
+        if (! monOn)
+            g.drawRoundedRectangle (monR.reduced (0.5f), monR.getHeight() * 0.5f, 1.0f);
+        g.setColour (monOn ? colour::onAccent : colour::textPrimary);
+        g.setFont (font (type::caption, true));
+        g.drawText (tr ("Monitorizacion"), monR.toNearestInt(), juce::Justification::centred, false);
+
+        g.setColour (colour::border);
+        g.fillRect (256, 44, 1, getHeight() - 56);
+    }
+
+    // Ranuras de efectos (a la derecha de Fuente/AutoPitch, o desde la izquierda en modo Efectos)
+    const auto indices = visibleEffectSlotIndices();
     const int cardW = 146;
     const int gap = 10;
     const int cardH = juce::jmax (96, getHeight() - 62);
+    const int startX = effectsStartX();
 
-    if (slots != nullptr)
+    if (track >= 0 && track < (int) song.mixer.size())
     {
-        for (int i = 0; i < (int) slots->size(); ++i)
+        const auto& effects = song.mixer[(std::size_t) track].effects;
+        for (int idx = 0; idx < (int) indices.size(); ++idx)
         {
-            const auto& slot = (*slots)[(std::size_t) i];
-            const auto card = juce::Rectangle<float> ((float) (24 + i * (cardW + gap)), 46.0f, (float) cardW, (float) cardH);
-            const bool hot = (i == hoverSlot);
+            const int slotIdx = indices[(std::size_t) idx];
+            const auto& slot = effects[(std::size_t) slotIdx];
+            const auto card = juce::Rectangle<float> ((float) (startX + idx * (cardW + gap)), 46.0f, (float) cardW, (float) cardH);
+            if (card.getRight() > (float) getWidth() - 144.0f)
+                break;
+            const bool hot = (slotIdx == hoverSlot);
             fillRoundRect (g, card, radius::md, hot ? colour::bg3 : colour::bg2);
             g.setColour (slot.enabled ? colour::borderStrong : colour::border);
             g.drawRoundedRectangle (card.reduced (0.5f), radius::md, 1.0f);
 
-            // Boton bypass (encendido/apagado) arriba a la izquierda
             const auto led = juce::Rectangle<float> (card.getX() + 10.0f, card.getY() + 10.0f, 12.0f, 12.0f);
             g.setColour (slot.enabled ? colour::accent : colour::textDisabled);
             g.fillEllipse (led);
 
-            // Tres puntos / opciones a la derecha
             g.setColour (colour::textSecondary);
             g.setFont (font (type::smallSize, true));
             g.drawText ("...", (int) card.getRight() - 28, (int) card.getY() + 6, 20, 18, juce::Justification::centred, false);
 
-            // Nombre del efecto
+            const auto slotTitle = (slot.kind == EffectKind::plugin && ! slot.plugin.name.empty())
+                                       ? juce::String::fromUTF8 (slot.plugin.name.c_str())
+                                       : addableEffectName (slot.kind);
             g.setColour (slot.enabled ? colour::textPrimary : colour::textDisabled);
             g.setFont (font (type::body, true));
-            g.drawFittedText (addableEffectName (slot.kind),
+            g.drawFittedText (slotTitle,
                               juce::Rectangle<int> ((int) card.getX() + 10, (int) card.getY() + 30, (int) card.getWidth() - 20, 22),
                               juce::Justification::centredLeft, 1, 0.85f);
 
-            // Boton "Abrir UI"
             const auto uiBtn = juce::Rectangle<float> (card.getX() + 10.0f, card.getY() + 56.0f, 64.0f, 20.0f);
             fillRoundRect (g, uiBtn, 10.0f, colour::bg4);
             g.setColour (colour::textSecondary);
             g.setFont (font (type::caption, true));
             g.drawText (tr ("Abrir UI"), uiBtn.toNearestInt(), juce::Justification::centred, false);
 
-            // Mezcla (Mix %) abajo
             const int mixPct = juce::roundToInt (slot.mix * 100.0f);
             g.setColour (colour::textSecondary);
             g.setFont (font (type::caption, false));
@@ -135,9 +476,9 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
         }
     }
 
-    // Tarjeta "+ Añadir efecto" estilo BandLab
+    // Tarjeta "+ Añadir efecto" siempre disponible a la derecha del plugin / slots
     const auto addCard = addCardBounds().toFloat();
-    if (addCard.getRight() < (float) getWidth() - 160.0f)
+    if (addCard.getRight() < (float) getWidth() - 144.0f)
     {
         fillRoundRect (g, addCard, radius::md, hoverAdd ? colour::bg3 : colour::bg2);
         g.setColour (colour::borderStrong);
@@ -179,7 +520,6 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
     g.setFont (font (type::caption, true));
     g.drawText (tr ("Volumen"), rightX + 12, getHeight() - 22, 52, 16, juce::Justification::centred, false);
 
-    // Pan knob blanco L / R
     const auto panR = juce::Rectangle<float> ((float) rightX + 86.0f, (float) getHeight() - 56.0f, 26.0f, 26.0f);
     g.setColour (juce::Colour (0xffeef0f4));
     g.fillEllipse (panR.reduced (2.0f));
@@ -190,6 +530,109 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
     g.setColour (colour::textSecondary);
     g.setFont (font (type::caption, true));
     g.drawText (tr ("Pan"), rightX + 74, getHeight() - 22, 50, 16, juce::Justification::centred, false);
+}
+
+void BandLabFxDrawer::showInputDeviceMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader (tr ("Dispositivo de entrada (Microfono)"));
+
+    juce::String currentDev;
+    if (auto* dev = engine.getDeviceManager().getCurrentAudioDevice())
+        currentDev = dev->getName();
+
+    if (auto* typeObj = engine.getDeviceManager().getCurrentDeviceTypeObject())
+    {
+        typeObj->scanForDevices();
+        const auto inNames = typeObj->getDeviceNames (true);
+        for (const auto& name : inNames)
+        {
+            const bool ticked = (name == currentDev);
+            menu.addItem (name, true, ticked, [this, name] {
+                const auto notice = engine.openAudioInput (name);
+                if (notice.issue != AudioEngine::InputIssue::none)
+                    mixerinput::explain (notice);
+                else if (track > 0 && track < (int) engine.getSong().mixer.size() && engine.getSong().mixer[(std::size_t) track].inputChannel < 0)
+                {
+                    engine.setInsertInput (track, 0, false);
+                    engine.setInsertArmed (track, true);
+                }
+                repaint();
+            });
+        }
+    }
+
+    menu.addSeparator();
+    menu.addItem (tr ("Configuracion de audio..."), mixerinput::openAudioSettings != nullptr, false, [] {
+        if (mixerinput::openAudioSettings)
+            mixerinput::openAudioSettings();
+    });
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (inputDeviceBoxBounds())));
+}
+
+void BandLabFxDrawer::showInputChannelMenu()
+{
+    if (! engine.hasAudioInput())
+    {
+        const auto notice = engine.openAudioInput();
+        if (notice.issue != AudioEngine::InputIssue::none)
+        {
+            mixerinput::explain (notice);
+            return;
+        }
+    }
+
+    const auto& song = engine.getSong();
+    const int curCh = (track >= 0 && track < (int) song.mixer.size()) ? song.mixer[(std::size_t) track].inputChannel : -1;
+    const bool curStereo = (track >= 0 && track < (int) song.mixer.size()) ? song.mixer[(std::size_t) track].inputStereo : false;
+
+    const auto names = engine.getInputChannelNames();
+    juce::PopupMenu menu;
+    menu.addSectionHeader (tr ("Canal de entrada"));
+    menu.addItem (tr ("Sin entrada (ninguno)"), true, curCh < 0, [this] {
+        engine.setInsertInput (track, -1, true);
+        if (track > 0)
+            engine.setInsertArmed (track, false);
+        repaint();
+    });
+
+    if (! names.empty())
+    {
+        menu.addSeparator();
+        for (int c = 0; c < (int) names.size(); ++c)
+        {
+            const auto label = tr ("Canal {0}", { juce::String (c + 1) }) + " - " + juce::String::fromUTF8 (names[(std::size_t) c].c_str()) + " (Mono)";
+            const bool ticked = (curCh == c && ! curStereo);
+            menu.addItem (label, true, ticked, [this, c] {
+                engine.setInsertInput (track, c, false);
+                if (track > 0)
+                    engine.setInsertArmed (track, true);
+                repaint();
+            });
+        }
+        if (names.size() >= 2)
+        {
+            menu.addSeparator();
+            for (int c = 0; c + 1 < (int) names.size(); c += 2)
+            {
+                const auto label = tr ("Canal {0} + {1}", { juce::String (c + 1), juce::String (c + 2) }) + " (Estereo)";
+                const bool ticked = (curCh == c && curStereo);
+                menu.addItem (label, true, ticked, [this, c] {
+                    engine.setInsertInput (track, c, true);
+                    if (track > 0)
+                        engine.setInsertArmed (track, true);
+                    repaint();
+                });
+            }
+        }
+    }
+    else
+    {
+        menu.addItem (tr ("No hay canales de entrada disponibles"), false, false, nullptr);
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (inputChannelBoxBounds())));
 }
 
 void BandLabFxDrawer::showAddEffectMenu()
@@ -243,11 +686,19 @@ void BandLabFxDrawer::mouseMove (const juce::MouseEvent& e)
     const int hs = slotCardAt (e.getPosition());
     const bool ha = addCardBounds().contains (e.getPosition());
     const bool hc = closeBtnBounds().contains (e.getPosition());
-    if (hs != hoverSlot || ha != hoverAdd || hc != hoverClose)
+    int hip = 0;
+    if (mode == Mode::input)
+    {
+        if (inputDeviceBoxBounds().contains (e.getPosition())) hip = 1;
+        else if (inputChannelBoxBounds().contains (e.getPosition())) hip = 2;
+        else if (monitorBtnBounds().contains (e.getPosition())) hip = 3;
+    }
+    if (hs != hoverSlot || ha != hoverAdd || hc != hoverClose || hip != hoverInputPart)
     {
         hoverSlot = hs;
         hoverAdd = ha;
         hoverClose = hc;
+        hoverInputPart = hip;
         repaint();
     }
 }
@@ -257,6 +708,7 @@ void BandLabFxDrawer::mouseExit (const juce::MouseEvent&)
     hoverSlot = -1;
     hoverAdd = false;
     hoverClose = false;
+    hoverInputPart = 0;
     repaint();
 }
 
@@ -270,6 +722,28 @@ void BandLabFxDrawer::mouseDown (const juce::MouseEvent& e)
         if (onClose)
             onClose();
         return;
+    }
+
+    if (mode == Mode::input)
+    {
+        if (inputDeviceBoxBounds().contains (e.getPosition()))
+        {
+            showInputDeviceMenu();
+            return;
+        }
+        if (inputChannelBoxBounds().contains (e.getPosition()))
+        {
+            showInputChannelMenu();
+            return;
+        }
+        if (monitorBtnBounds().contains (e.getPosition()))
+        {
+            const auto& s = engine.getSong();
+            const bool currentlyOn = (track >= 0 && track < (int) s.mixer.size()) && s.mixer[(std::size_t) track].monitor != InputMonitor::off;
+            engine.setInsertMonitor (track, currentlyOn ? InputMonitor::off : InputMonitor::on);
+            repaint();
+            return;
+        }
     }
 
     const int rightX = getWidth() - 136;
@@ -297,8 +771,14 @@ void BandLabFxDrawer::mouseDown (const juce::MouseEvent& e)
     const int slotIdx = slotCardAt (e.getPosition());
     if (slotIdx >= 0)
     {
+        const auto indices = visibleEffectSlotIndices();
+        int visPos = 0;
+        for (int i = 0; i < (int) indices.size(); ++i)
+            if (indices[(std::size_t) i] == slotIdx)
+                visPos = i;
+
         const int cardW = 146, gap = 10;
-        const int cardX = 24 + slotIdx * (cardW + gap);
+        const int cardX = effectsStartX() + visPos * (cardW + gap);
         const juce::Rectangle<int> ledRect (cardX + 10, 56, 12, 12);
         if (ledRect.contains (e.getPosition()))
         {
