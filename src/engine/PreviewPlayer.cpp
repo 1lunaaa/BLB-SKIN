@@ -60,6 +60,10 @@ void PreviewPlayer::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
     }
 
+    // the UI asked to jump in the sample (a click on the Browser's preview waveform): a fraction 0..1 of it
+    if (const auto seek = seekFraction.exchange (-1.0, std::memory_order_relaxed); seek >= 0.0 && current != nullptr && current->frames() > 1)
+        position = juce::jlimit (0.0, 1.0, seek) * (double) (current->frames() - 1);
+
     if (current == nullptr || current->frames() < 2 || buffer.getNumChannels() < 2)
     {
         playPosition.store (-1.0, std::memory_order_relaxed);

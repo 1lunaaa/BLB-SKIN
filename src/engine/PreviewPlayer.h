@@ -26,6 +26,8 @@ public:
     void setEditorVolume (float gainFactor) noexcept { editorVolume.store (gainFactor, std::memory_order_relaxed); }
     // Any thread: the frame being played in the current sample, or -1 when nothing plays.
     double getPlayPosition() const noexcept { return playPosition.load (std::memory_order_relaxed); }
+    // Any thread: jump the playback to this fraction (0..1) of the current sample, at the next audio block.
+    void seekTo (double fraction) noexcept { seekFraction.store (fraction, std::memory_order_relaxed); }
 
     const juce::String getName() const override { return "Preview"; }
     void prepareToPlay (double sampleRate, int) override { deviceRate = sampleRate; }
@@ -55,6 +57,7 @@ private:
     bool pendingEditor = false, editor = false;
     std::atomic<float> volume { 1.0f }, editorVolume { 1.0f };
     std::atomic<double> playPosition { -1.0 };
+    std::atomic<double> seekFraction { -1.0 }; // a jump asked by the UI: a fraction 0..1 of the sample (-1 = none)
     std::shared_ptr<const SampleData> current;  // touched only by the audio thread
     std::shared_ptr<const SampleData> retired;  // released by the UI (audio never deallocates)
     double position = 0.0;

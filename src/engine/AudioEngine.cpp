@@ -915,6 +915,8 @@ void AudioEngine::previewFile (const juce::File& file)
         preview->playBrowser (file.existsAsFile() ? samples.load (file.getFullPathName()) : nullptr);
 }
 
+void AudioEngine::seekPreview (double fraction) { if (preview != nullptr) preview->seekTo (fraction); }
+
 void AudioEngine::setInputScale (int scale, int root) noexcept
 {
     inputScaleRoot.store (root);

@@ -258,6 +258,7 @@ public:
 
     // Preview of an audio file (browser). An invalid/empty file stops the preview.
     void previewFile (const juce::File& file);
+    void seekPreview (double fraction); // jumps the Browser preview to this fraction (0..1) of the sample. UI thread.
     // The Browser's preview volume (0..1.25, 1 = default; core/ValueMath.h previewGain). Applies to the preview
     // playing now too. UI thread.
     void setPreviewVolume (double volume) noexcept;

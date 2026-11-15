@@ -2402,8 +2402,28 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (isAudio (file) && e.mods.isLeftButtonDown())
+        if (! (isAudio (file) && e.mods.isLeftButtonDown()))
+            return;
+
+        // the waveform's rectangle, as paint() computes it
+        auto area = getLocalBounds().reduced (6, 4).withTrimmedTop (1);
+        area.removeFromTop (14);
+        area.removeFromTop (2);
+        const auto wave = area.toFloat().reduced (2.0f, 2.0f);
+
+        if (wave.getWidth() < 1.0f || ! wave.contains (e.position))
+        {
             browser.fileSelected (file, true); // hear it again
+            return;
+        }
+
+        // a click on the waveform: play from that point (as FL's Browser preview)
+        const auto fraction = juce::jlimit (0.0, 1.0, (double) ((e.position.x - wave.getX()) / wave.getWidth()));
+        if (! (browser.isPreviewPlaying() && browser.previewedFile == file))
+            browser.fileSelected (file, true);
+        browser.engine.seekPreview (fraction);
+        startedAt = juce::Time::getMillisecondCounterHiRes() - fraction * seconds * 1000.0;
+        repaint();
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
