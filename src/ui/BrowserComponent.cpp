@@ -2017,10 +2017,6 @@ private:
                     if (safe != nullptr)
                         safe->browser.openFile (file);
                 });
-                menu.addItem (tr ("Send to the Playlist as an audio clip"), ok && browser.onSendToPlaylist != nullptr, false, [safe, file] {
-                    if (safe != nullptr && safe->browser.onSendToPlaylist)
-                        safe->browser.onSendToPlaylist (file);
-                });
                 menu.addSeparator();
                 menu.addItem (tr ("Edit in the audio editor..."), ok, false, [&engine, file] { openAudioEditor (engine, file); });
                 if (item.index >= 0)
@@ -3486,7 +3482,6 @@ void BrowserComponent::fileSelected (const juce::File& file, bool preview)
 void BrowserComponent::addSystemItems (juce::PopupMenu& menu, const juce::File& file)
 {
     menu.addSeparator();
-    menu.addItem (tr ("Starred"), true, isStarred (file), [this, file] { setStarred (file, ! isStarred (file)); });
     juce::PopupMenu system;
     system.addItem (tr ("Open parent folder"), [file] { file.getParentDirectory().startAsProcess(); });
     system.addItem (tr ("Locate file"), [file] { file.revealToUser(); });
@@ -3534,8 +3529,6 @@ void BrowserComponent::showFileMenu (const juce::File& file)
     {
         menu.addItem (tr ("Send to the selected channel"), onLoadIntoChannel != nullptr, false, [this, file] { onLoadIntoChannel (file); });
         menu.addItem (tr ("Open in a new channel"), [this, file] { openFile (file); });
-        menu.addSeparator();
-        menu.addItem (tr ("Send to the Playlist as an audio clip"), onSendToPlaylist != nullptr, false, [this, file] { onSendToPlaylist (file); });
         menu.addSeparator();
         menu.addItem (tr ("Edit in the audio editor..."), [this, file] { openAudioEditor (engine, file); });
     }
