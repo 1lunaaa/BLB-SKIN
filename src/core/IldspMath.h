@@ -9,11 +9,19 @@
 #include <cstring>
 #include "core/Simd.h"
 #if LYNX_X86
- #include <cpuid.h>
+ #if defined(_MSC_VER)
+  #include <intrin.h>
+  #define ILDSP_TARGET_FMA
+ #else
+  #include <cpuid.h>
+  #define ILDSP_TARGET_FMA __attribute__ ((target ("fma")))
+ #endif
 #endif
 
+#if defined(__clang__)
 #pragma clang fp contract(off)
 #pragma STDC FENV_ACCESS ON
+#endif
 
 namespace lynx::ildsp
 {
@@ -26,12 +34,20 @@ inline float ffrom (std::uint32_t u) { float v; std::memcpy (&v, &u, 4); return 
 inline bool cpuHasFma()
 {
     static const bool f = [] {
+#if defined(_MSC_VER)
+        int info[4] = {};
+        __cpuid (info, 1);
+        const unsigned c = (unsigned) info[2];
+        if ((c & (1u << 12)) == 0 || (c & (1u << 27)) == 0 || (c & (1u << 28)) == 0) return false;
+        return (_xgetbv (0) & 6u) == 6u;
+#else
         unsigned a = 0, b = 0, c = 0, d = 0;
         if (! __get_cpuid (1, &a, &b, &c, &d)) return false;
         if ((c & (1u << 12)) == 0 || (c & (1u << 27)) == 0 || (c & (1u << 28)) == 0) return false;
         unsigned lo = 0, hi = 0;
         asm volatile ("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
         return (lo & 6u) == 6u;
+#endif
     }();
     return f;
 }
@@ -42,9 +58,9 @@ extern bool forceNoFma; // test switch (false: follow the CPU)
 inline bool useFma() { return cpuHasFma() && ! forceNoFma; }
 
 #if LYNX_X86
-__attribute__ ((target ("fma"))) inline double fmaD (double a, double b, double c)
+ILDSP_TARGET_FMA inline double fmaD (double a, double b, double c)
 { return _mm_cvtsd_f64 (_mm_fmadd_sd (_mm_set_sd (a), _mm_set_sd (b), _mm_set_sd (c))); }
-__attribute__ ((target ("fma"))) inline float fmaF (float a, float b, float c)
+ILDSP_TARGET_FMA inline float fmaF (float a, float b, float c)
 { return _mm_cvtss_f32 (_mm_fmadd_ss (_mm_set_ss (a), _mm_set_ss (b), _mm_set_ss (c))); }
 #else
 inline double fmaD (double a, double b, double c) { return std::fma (a, b, c); }
@@ -195,7 +211,7 @@ inline float log10f_ (float xf)
     if (! (d1 < 0.0625f))
     {
         const std::uint32_t idx = ((xb & 0x007f0000u) + ((xb & 0x00008000u) << 1)) >> 16;
-        const float cm = ffrom ((xb & 0x007f0000u) + ((xb & 0x00008000u) << 1) | 0x3f000000u);
+        const float cm = ffrom (((xb & 0x007f0000u) + ((xb & 0x00008000u) << 1)) | 0x3f000000u);
         const float mm = ffrom (mb | 0x3f000000u);
         const float r = (cm - mm) * lgRcp[idx];
         float s, a, b;

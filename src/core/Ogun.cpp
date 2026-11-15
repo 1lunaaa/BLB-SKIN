@@ -17,6 +17,10 @@
 #include <limits>
 #include <mutex>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 #include "core/EngineParams.h"
 #include "core/HarmlessFx.h"
 #include "core/ModelParamsSynths.h"
@@ -1039,11 +1043,29 @@ inline void sinCos (double x, double& s, double& c) noexcept
     }
 }
 
+#if defined(_MSC_VER)
+#define OGUN_INLINE __forceinline
+#define OGUN_TARGET_AVX
+#elif defined(__x86_64__) || defined(_M_X64)
+#define OGUN_INLINE inline __attribute__ ((always_inline))
+#define OGUN_TARGET_AVX __attribute__ ((target ("avx")))
+#else
+#define OGUN_INLINE inline
+#define OGUN_TARGET_AVX
+#endif
+
 #if defined(__x86_64__) || defined(_M_X64)
 #define OGUN_X86 1
-#define OGUN_INLINE inline __attribute__ ((always_inline))
 bool ogunCpuHasAvx() noexcept
 {
+#if defined(_MSC_VER)
+    int info[4] = {};
+    __cpuidex (info, 1, 0);
+    const unsigned c = (unsigned) info[2];
+    if ((c & (1u << 27)) == 0 || (c & (1u << 28)) == 0) // OSXSAVE, AVX
+        return false;
+    return (_xgetbv (0) & 6u) == 6u;
+#else
     unsigned a = 1, b = 0, c = 0, d = 0;
     __asm__ __volatile__ ("cpuid" : "+a"(a), "=b"(b), "=c"(c), "=d"(d) : "c"(0));
     if ((c & (1u << 27)) == 0 || (c & (1u << 28)) == 0) // OSXSAVE, AVX
@@ -1051,9 +1073,8 @@ bool ogunCpuHasAvx() noexcept
     unsigned lo = 0, hi = 0;
     __asm__ __volatile__ ("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
     return (lo & 6u) == 6u;
+#endif
 }
-#else
-#define OGUN_INLINE inline
 #endif
 
 // The 32-point windowed-sinc reader of quality 4 (ogos_fast.sinc_read_fast) for one chunk, both tables at once:
@@ -1106,8 +1127,8 @@ void sincChunkPlain (const SincTables& T, const float* tn, const float* to, doub
 }
 
 #ifdef OGUN_X86
-__attribute__ ((target ("avx"))) void sincChunkAvx (const SincTables& T, const float* tn, const float* to, double pos0, double step, int m,
-                                                   int N, float* vn, float* vo) noexcept
+OGUN_TARGET_AVX void sincChunkAvx (const SincTables& T, const float* tn, const float* to, double pos0, double step, int m,
+                                   int N, float* vn, float* vo) noexcept
 {
     sincChunkBody (T, tn, to, pos0, step, m, N, vn, vo);
 }
@@ -1164,7 +1185,7 @@ void fftPassesPlain (double* zr, double* zi, const double* twr, const double* tw
 }
 
 #ifdef OGUN_X86
-__attribute__ ((target ("avx"))) void fftPassesAvx (double* zr, double* zi, const double* twr, const double* twi, int Nh, int block) noexcept
+OGUN_TARGET_AVX void fftPassesAvx (double* zr, double* zi, const double* twr, const double* twi, int Nh, int block) noexcept
 {
     fftPassesBody (zr, zi, twr, twi, Nh, block);
 }

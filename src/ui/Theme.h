@@ -82,7 +82,7 @@ themes::Palette currentPalette();
 namespace type
 {
 inline constexpr float caption = 11.0f;  // grid numbers, small captions
-inline constexpr float small = 12.0f;    // secondary labels, status bar, tooltips
+inline constexpr float smallSize = 12.0f;    // secondary labels, status bar, tooltips
 inline constexpr float body = 13.0f;     // default control text
 inline constexpr float title = 15.0f;    // panel titles
 inline constexpr float display = 20.0f;  // the transport position

@@ -18,7 +18,7 @@ std::uint64_t rotl (std::uint64_t x, int k) { return (x << k) | (x >> (32 - k));
 }
 
 FlRand::FlRand (std::uint64_t seed)
-    : s0 (seed), s1 ((std::uint64_t) (((unsigned __int128) seed * 75u + 74u) % 65537u))
+    : s0 (seed), s1 (((seed % 65537ull) * 75ull + 74ull) % 65537ull)
 {
 }
 

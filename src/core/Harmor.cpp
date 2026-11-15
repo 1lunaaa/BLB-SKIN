@@ -14,6 +14,10 @@
 #include <optional>
 #include <vector>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 // The engine is a 1:1 port of our round-34 reference model (r34/py/hmodel.py + hcurve.py, henv.py, hart.py, tabs.py,
 // hphaser.py, hrand.py), which reproduces the DLL as a sequence of float32 and double operations. The model is
 // numpy code: float32 arrays combined with Python floats stay float32 (NEP 50), Python floats are doubles that are
@@ -3692,13 +3696,25 @@ std::shared_ptr<Patch> buildPatch (const StateData& S, double fs, double bpm, co
 // (Harmor's glide coefficient can differ per partial), into the 4-lane sum of the sample. The same IEEE operations in
 // the same order whatever the instruction set, so the AVX build gives bit-identical results.
 
-#if defined(__GNUC__)
+#if defined(_MSC_VER)
+#define HARMOR_INLINE __forceinline
+#elif defined(__GNUC__)
 #define HARMOR_INLINE inline __attribute__ ((always_inline))
 #else
 #define HARMOR_INLINE inline
 #endif
 
-typedef double HarmorV4 __attribute__ ((vector_size (32)));
+struct alignas (32) HarmorV4
+{
+    double v[4] {};
+    double& operator[] (int i) noexcept { return v[i]; }
+    double operator[] (int i) const noexcept { return v[i]; }
+    friend HarmorV4 operator+ (HarmorV4 a, HarmorV4 b) noexcept { return { a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2], a.v[3] + b.v[3] }; }
+    friend HarmorV4 operator- (HarmorV4 a, HarmorV4 b) noexcept { return { a.v[0] - b.v[0], a.v[1] - b.v[1], a.v[2] - b.v[2], a.v[3] - b.v[3] }; }
+    friend HarmorV4 operator* (HarmorV4 a, HarmorV4 b) noexcept { return { a.v[0] * b.v[0], a.v[1] * b.v[1], a.v[2] * b.v[2], a.v[3] * b.v[3] }; }
+    friend HarmorV4 operator* (HarmorV4 a, double k) noexcept { return { a.v[0] * k, a.v[1] * k, a.v[2] * k, a.v[3] * k }; }
+    HarmorV4& operator+= (HarmorV4 b) noexcept { v[0] += b.v[0]; v[1] += b.v[1]; v[2] += b.v[2]; v[3] += b.v[3]; return *this; }
+};
 
 // G vectors of 4 partials from partial g on: sines x (recurrence x ← c·x − y), glide term e = (a − T)·k^j (e ← e·k),
 // per-sample sums of (T + e)·x into acc[4·j … 4·j + 3]
@@ -4331,7 +4347,7 @@ public:
         advance (n);
     }
 
-    // FL's PITCH knob and main pitch, live (round 167a): the next note's channel pitch, and the channel's pitch now
+    // FL's PITCH knob and main pitch move the sounding notes too (round 167a)
     float nextLiveRef = NAN;
     void followPitch (float now) noexcept
     {

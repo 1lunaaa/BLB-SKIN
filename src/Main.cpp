@@ -5863,7 +5863,7 @@ private:
         auto device = std::make_shared<StandIn>();
         auto text = std::make_shared<juce::String>();
         auto step = [report, text] (const juce::String& line) { *text << line << "\n"; report.replaceWithText (*text); };
-        auto finish = [this] (int code) {
+        const std::function<void (int)> finish = [this] (int code) {
             setApplicationReturnValue (code);
             quit();
         };
@@ -6542,6 +6542,16 @@ private:
         });
     }
 
+    // the clicks of one side (peaks above -12 dBFS, one per 1/8 s at most)
+    static std::vector<juce::int64> hwInsertPeaks (const std::vector<float>& x, double rate)
+    {
+        std::vector<juce::int64> peaks;
+        for (std::size_t f = 1; f + 1 < x.size(); ++f)
+            if (std::abs (x[f]) > 0.25f && std::abs (x[f]) >= std::abs (x[f - 1]) && std::abs (x[f]) > std::abs (x[f + 1])
+                && (peaks.empty() || (juce::int64) f - peaks.back() > (juce::int64) (rate / 8)))
+                peaks.push_back ((juce::int64) f);
+        return peaks;
+    }
     // --hwinserttest (round 164d): see the command line above.
     void runHwInsertTest (const juce::File& report, double seconds, const juce::String& deviceType, const juce::String& deviceName,
                           const juce::String& inputName, int bufferSize, bool inPatcher = false, juce::File bounceFile = {})
@@ -6550,8 +6560,8 @@ private:
         lynx::videoview::install (*engine); // (Fruity Video Player channels: their sound tracks)
         savedDeviceState = engine->getDeviceManager().createStateXml();
         auto text = std::make_shared<juce::String>();
-        auto step = [report, text] (const juce::String& line) { *text << line << "\n"; report.replaceWithText (*text); };
-        auto finish = [this] (int code) {
+        const std::function<void (const juce::String&)> step = [report, text] (const juce::String& line) { *text << line << "\n"; report.replaceWithText (*text); };
+        const std::function<void (int)> finish = [this] (int code) {
             if (engine != nullptr)
                 engine->getMeters().capture.setSource (lynx::AudioCapture::off);
             restoreSavedDeviceState();
@@ -6762,15 +6772,7 @@ private:
                         const auto dropped = engine->getMeters().capture.droppedFrames();
                         engine->getMeters().capture.setSource (lynx::AudioCapture::off);
                         // the clicks of each side (peaks above -12 dBFS, one per 1/8 s at most)
-                        auto peaksOf = [rate] (const std::vector<float>& x) {
-                            std::vector<juce::int64> peaks;
-                            for (std::size_t f = 1; f + 1 < x.size(); ++f)
-                                if (std::abs (x[f]) > 0.25f && std::abs (x[f]) >= std::abs (x[f - 1]) && std::abs (x[f]) > std::abs (x[f + 1])
-                                    && (peaks.empty() || (juce::int64) f - peaks.back() > (juce::int64) (rate / 8)))
-                                    peaks.push_back ((juce::int64) f);
-                            return peaks;
-                        };
-                        const auto wet = peaksOf (*left), dry = peaksOf (*right);
+                        const auto wet = hwInsertPeaks (*left, rate), dry = hwInsertPeaks (*right, rate);
                         int pairs = 0;
                         juce::int64 worst = 0;
                         double gainSum = 0.0, residual = 0.0, energy = 0.0;
@@ -6810,7 +6812,7 @@ private:
                         const auto ok = pairs >= (int) (seconds * 2.0) - 2 - excused && worst == 0 && dropped == 0 && engine->getLatencySamples() == samples;
                         step (juce::String ("result=") + (ok ? "OK" : "FAILED"));
                         // (round 165c) then the re-ping notice after a buffer size change
-                        auto then = [this, ref, step, finish] (int code) {
+                        const std::function<void (int)> then = [this, ref, step, finish] (int code) {
                             if (code != 0)
                                 finish (code);
                             else
@@ -11116,7 +11118,7 @@ private:
             {
                 const auto& l = menus[(std::size_t) m];
                 g.setColour (lynx::theme::colour::textSecondary);
-                g.setFont (lynx::theme::font (lynx::theme::type::small, true));
+                g.setFont (lynx::theme::font (lynx::theme::type::smallSize, true));
                 g.drawText (names[m], x, 0, l.width, 24, juce::Justification::centredLeft);
                 {
                     juce::Graphics::ScopedSaveState state (g);
@@ -11207,7 +11209,7 @@ private:
         juce::Graphics g (image); // (drawing is flushed when it goes out of scope)
         g.addTransform (juce::AffineTransform::scale (scale));
         g.fillAll (lynx::theme::colour::bg3);
-        g.setFont (lynx::theme::font (lynx::theme::type::small));
+        g.setFont (lynx::theme::font (lynx::theme::type::smallSize));
 
         for (int i = 1; i < lynx::iconCount; ++i)
         {

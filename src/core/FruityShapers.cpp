@@ -45,7 +45,7 @@ struct X87Mode
     X87Mode& operator= (const X87Mode&) = delete;
 };
 #else
-// no x87 (ARM64): conversions follow the kernel's rounding direction (arithmetic stays round-to-nearest; precision
+// no x87 (ARM64 / MSVC): conversions follow the kernel's rounding direction (arithmetic stays round-to-nearest; precision
 // is the platform's long double)
 inline thread_local bool x87Truncate = false; // the conversions below follow it (arithmetic stays round-to-nearest)
 struct X87Mode
@@ -424,7 +424,7 @@ struct HalfBand
         load (h0, h1, s);
         for (int n = 0; n < m; ++n)
         {
-            const V2 v = { (double) x0[n], (double) x1[n] };
+            const V2 v { (double) x0[n], (double) x1[n] };
             const V2 a1 = s[6] + (v - s[0]) * kA[0];
             s[6] = v, s[0] = a1;
             const V2 b1 = s[9] + (v - s[3]) * kB[0];
@@ -451,7 +451,7 @@ struct HalfBand
         load (h0, h1, s);
         for (int n = 0; n < m; ++n)
         {
-            const V2 e = { (double) x0[2 * n], (double) x1[2 * n] }, o = { (double) x0[2 * n + 1], (double) x1[2 * n + 1] };
+            const V2 e { (double) x0[2 * n], (double) x1[2 * n] }, o { (double) x0[2 * n + 1], (double) x1[2 * n + 1] };
             const V2 a1 = s[6] + (e - s[0]) * kA[0];
             s[6] = e, s[0] = a1;
             const V2 b1 = s[9] + (o - s[3]) * kB[0];
@@ -472,7 +472,14 @@ struct HalfBand
     }
 
 private:
-    using V2 = double __attribute__ ((vector_size (16)));
+    struct alignas (16) V2
+    {
+        double v[2] {};
+        double operator[] (int i) const noexcept { return v[i]; }
+        friend V2 operator+ (V2 a, V2 b) noexcept { return { a.v[0] + b.v[0], a.v[1] + b.v[1] }; }
+        friend V2 operator- (V2 a, V2 b) noexcept { return { a.v[0] - b.v[0], a.v[1] - b.v[1] }; }
+        friend V2 operator* (V2 a, double k) noexcept { return { a.v[0] * k, a.v[1] * k }; }
+    };
     static void load (const HalfBand& h0, const HalfBand& h1, V2* s) noexcept
     {
         for (int i = 0; i < 12; ++i)

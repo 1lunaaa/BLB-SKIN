@@ -7,6 +7,9 @@ project(LYNX VERSION 0.1.24 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
 
 # The same float results with every compiler and CPU: no fused multiply-add contraction (arm64 and newer x86 have
 # FMA; the exact FL engines rely on the plain operation order, as the Windows build compiles them)
@@ -581,4 +584,19 @@ if(WIN32)
     target_include_directories(lynx-asio PRIVATE third_party/asiosdk/common)
     target_compile_definitions(lynx-asio PRIVATE UNICODE _UNICODE)
     target_link_libraries(lynx-asio PRIVATE ole32 uuid avrt user32 gdi32 advapi32)
+endif()
+
+# --- Fixes de compilación en Windows/MSVC ---
+if(MSVC)
+  target_compile_options(LYNX PRIVATE /utf-8)
+  target_compile_definitions(LYNX PRIVATE WIN32_LEAN_AND_MEAN)
+  target_compile_definitions(lynx_tests PRIVATE _USE_MATH_DEFINES)
+  target_compile_options(lynx_tests PRIVATE /bigobj)
+endif()
+
+if(WIN32)
+  target_link_libraries(renderwav PRIVATE winmm)
+endif()
+if(MSVC)
+  target_link_options(LYNX PRIVATE /STACK:16777216)
 endif()
