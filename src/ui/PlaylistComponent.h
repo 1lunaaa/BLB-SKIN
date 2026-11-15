@@ -564,6 +564,8 @@ class PlaylistArea final : public juce::Component,
                            private juce::ChangeListener
 {
 public:
+    int getSelectedTrack() const { return playlist.getSelectedTrack(); }
+public:
     std::function<void()> onOpenEffects;
     std::function<void()> onOpenEditor;
 

@@ -127,13 +127,17 @@ int takeTrack (const Song& song, int insert, std::int64_t start, std::int64_t en
     const auto freeAt = [&] (int track) {
         return std::none_of (song.playlist.begin(), song.playlist.end(), [&] (const Clip& c) { return c.track == track && c.start < end && c.end() > start; });
     };
+    if (! song.playlistTracks.empty())
+        return 0;
     if (insert > 0)
+    {
         for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
         {
             const auto& pt = song.playlistTracks[(std::size_t) t];
             if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert && freeAt (t))
                 return t;
         }
+    }
     int next = 0;
     for (const auto& c : song.playlist)
         next = std::max (next, c.track + 1);
@@ -150,7 +154,7 @@ void linkTakeTrack (Song& song, int track, int insert)
     if ((int) song.playlistTracks.size() <= track)
         song.playlistTracks.resize ((std::size_t) track + 1);
     auto& pt = song.playlistTracks[(std::size_t) track];
-    if (pt.mode != PlaylistTrackMode::unassigned)
+    if (pt.mode != PlaylistTrackMode::unassigned && pt.mixerTrack > 0)
         return;
     pt.mode = PlaylistTrackMode::audio;
     pt.mixerTrack = insert;

@@ -301,14 +301,15 @@ void BandLabFxDrawer::resized()
     if (embeddedEditor != nullptr)
     {
         const int rightX = getWidth() - 136;
-        const int availW = juce::jmax (260, rightX - 280);
-        const int availH = juce::jmax (140, getHeight() - 52);
+        const int startX = 310;
+        const int availW = juce::jmax (260, rightX - startX - 18);
+        const int availH = juce::jmax (150, getHeight() - 40);
         const int ew = embeddedEditor->getWidth() > 0 ? embeddedEditor->getWidth() : 460;
         const int eh = embeddedEditor->getHeight() > 0 ? embeddedEditor->getHeight() : availH;
         const int w = juce::jmin (availW, ew);
         const int h = juce::jmin (availH, eh);
-        const int y = 42 + juce::jmax (0, (availH - h) / 2);
-        embeddedEditor->setBounds (270, y, w, h);
+        const int y = 32 + juce::jmax (0, (availH - h) / 2);
+        embeddedEditor->setBounds (startX, y, w, h);
     }
     repaint();
 }
@@ -349,16 +350,12 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
         g.setFont (font (type::caption, true));
         g.drawText (tr ("Entrada"), 24, 46, 200, 16, juce::Justification::centredLeft, false);
 
-        juce::String devName = tr ("Predeterminado - Microfono");
-        if (auto* dev = engine.getDeviceManager().getCurrentAudioDevice())
-        {
-            if (dev->getName().isNotEmpty())
+        juce::String devName = tr ("Seleccionar microfono...");
+            const auto curSetup = engine.getDeviceManager().getAudioDeviceSetup();
+            if (curSetup.inputDeviceName.isNotEmpty())
+                devName = curSetup.inputDeviceName;
+            else if (auto* dev = engine.getDeviceManager().getCurrentAudioDevice(); dev != nullptr && dev->getName().isNotEmpty())
                 devName = dev->getName();
-        }
-        else if (! engine.hasAudioInput())
-        {
-            devName = tr ("Seleccionar microfono...");
-        }
 
         const auto devBox = inputDeviceBoxBounds().toFloat();
         fillRoundRect (g, devBox, radius::sm, hoverInputPart == 1 ? colour::bg3 : colour::bg2);
@@ -537,9 +534,11 @@ void BandLabFxDrawer::showInputDeviceMenu()
     juce::PopupMenu menu;
     menu.addSectionHeader (tr ("Dispositivo de entrada (Microfono)"));
 
-    juce::String currentDev;
-    if (auto* dev = engine.getDeviceManager().getCurrentAudioDevice())
-        currentDev = dev->getName();
+    const auto setupNow = engine.getDeviceManager().getAudioDeviceSetup();
+    juce::String currentDev = setupNow.inputDeviceName;
+    if (currentDev.isEmpty())
+        if (auto* dev = engine.getDeviceManager().getCurrentAudioDevice())
+            currentDev = dev->getName();
 
     if (auto* typeObj = engine.getDeviceManager().getCurrentDeviceTypeObject())
     {

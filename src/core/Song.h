@@ -1098,14 +1098,14 @@ struct MixerTrack
     // -1 = none) and, when `inputStereo`, the next one too
     int inputChannel = -1;
     bool inputStereo = true;
-    InputMonitor monitor = InputMonitor::automatic;
+    InputMonitor monitor = InputMonitor::off;
     // record safe (round 163, as Pro Tools / Nuendo): the insert can't be armed by accident (saved)
     bool recordSafe = false;
     // FL's "Record <insert> to" (the arm button's right-click, round 167a [SHOT s20–s27]): the file this insert records
     // and renders to (empty = an automatic name). Saved.
     std::string recordTo;
     // FL's "Record" position (round 168x, issue #41): where the take is tapped. Saved.
-    RecordSource recordSource = RecordSource::postEq;
+    RecordSource recordSource = RecordSource::externalInput;
     // LYNX extra (issue #41, "(LYNX)" in the menu): with a position after the slots, also record the dry device input as
     // a second take at the same time (DI + processed, for re-amping). Saved.
     bool recordDryToo = false;
