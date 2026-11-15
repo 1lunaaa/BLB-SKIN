@@ -98,7 +98,7 @@ ToolStrip::ToolStrip (bool includeSlip)
     for (const auto& info : editTools())
     {
         // the Playlist has Slip, the Piano Roll the drum brush
-        if ((info.tool == EditTool::slip && ! includeSlip) || (info.tool == EditTool::drumPaint && includeSlip))
+        if (info.tool == EditTool::slip || (info.tool == EditTool::drumPaint && includeSlip))
             continue;
         if (toolGroup (info.tool) != group) // drawing, changing, looking (round 170e3)
             continue;
