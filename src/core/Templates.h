@@ -45,7 +45,7 @@ struct NewProjectDefaults
 {
     static constexpr int defaultInserts = 16;
     int inserts = defaultInserts;               // 0..maxMixerTracks - 1
-    MasterChain master = MasterChain::lynxDefault;
+    MasterChain master = MasterChain::clipper;
     bool cleanMixer = false;
     int playlistTracks = 16;                    // tracks the Playlist shows at least (1..500)
     // FL's Options › Project settings › "Enable automatic crossfades in new projects" (round 166e; on by default)

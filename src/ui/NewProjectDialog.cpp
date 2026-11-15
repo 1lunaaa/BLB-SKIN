@@ -58,12 +58,10 @@ struct TemplateItem
 std::vector<TemplateItem> templateItems (bool sample)
 {
     std::vector<TemplateItem> items;
-    items.push_back ({ tr ("Default"), tr ("Drums and a synth on the first inserts, a limiter on Master"), -1, {} });
     const auto names = templateNames();
-    const char* const descriptions[] = { TR_NOOP ("Nothing in the patterns"), TR_NOOP ("A four-on-the-floor beat to start from"),
-                                         TR_NOOP ("140 BPM, fast hats and an 808 with glide"), TR_NOOP ("124 BPM house groove with bass") };
+    const char* const descriptions[] = { TR_NOOP ("Nothing in the patterns, Soft Clipper on Master") };
     for (int i = 0; i < (int) names.size(); ++i)
-        items.push_back ({ tr (juce::String::fromUTF8 (names[(std::size_t) i].c_str())), i < 4 ? tr (descriptions[i]) : juce::String(), i, {} });
+        items.push_back ({ tr (juce::String::fromUTF8 (names[(std::size_t) i].c_str())), i < 1 ? tr (descriptions[i]) : juce::String(), i, {} });
 
     if (sample)
     {
@@ -75,7 +73,7 @@ std::vector<TemplateItem> templateItems (bool sample)
     for (const auto& f : userTemplatesFolder().findChildFiles (juce::File::findFiles, false, juce::String ("*") + ProjectFile::extension))
         items.push_back ({ juce::String::fromUTF8 (templateDisplayName (f.getFileName().toStdString()).c_str()), tr ("Your template"), -2, f });
 
-    std::stable_sort (items.begin() + 1 + (long) names.size(), items.end(), [] (const TemplateItem& a, const TemplateItem& b) {
+    std::stable_sort (items.begin() + (long) names.size(), items.end(), [] (const TemplateItem& a, const TemplateItem& b) {
         return a.name.compareNatural (b.name) < 0;
     });
     return items;
@@ -252,7 +250,7 @@ public:
         {
             name.setText ("Night Drive", false);
             genre.setText ("Synthwave", false);
-            templates.selectRow (2);
+            templates.selectRow (0);
         }
         templateChosen();
         setSize (700, 540);
