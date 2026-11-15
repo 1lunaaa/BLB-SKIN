@@ -6024,6 +6024,25 @@ bool PlaylistComponent::handleKey (const juce::KeyPress& key)
         return true;
     }
 
+    // Shift+Up / Shift+Down: the selected clips (audio, patterns, automation) move one track up / down together
+    if (mods.isShiftDown() && ! cmd && ! mods.isAltDown() && (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey) && ! selection.empty())
+    {
+        const auto step = code == juce::KeyPress::upKey ? -1 : 1;
+        const auto last = numTracks() - 1;
+        engine.editSong ([this, step, last] (Song& s) {
+            auto delta = step;
+            for (auto i : selection)
+            {
+                const auto t = s.playlist[(std::size_t) i].track;
+                delta = step < 0 ? juce::jmax (delta, -t) : juce::jmin (delta, last - t);
+            }
+            for (auto i : selection)
+                s.playlist[(std::size_t) i].track += delta;
+        });
+        sortClips (selection); // (audio clips follow an audio track, as after any move)
+        return true;
+    }
+
     if (cmd && letter == 'A')
     {
         std::vector<int> all ((std::size_t) engine.getSong().playlist.size());
