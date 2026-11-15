@@ -559,7 +559,7 @@ public:
     void setTitleBarInsets (int left, int right) override
     {
         titleLeft = left;
-        playlist.setTitleBarInsets (juce::jmax (0, left - PatternPicker::width), right);
+        playlist.setTitleBarInsets (left, right);
         resized();
     }
 
@@ -606,7 +606,7 @@ public:
                 return;
             }
         }
-        auto column = area.removeFromLeft (PatternPicker::width);
+        auto column = area.removeFromLeft (0); // (picker panel hidden)
         picker.setBounds (titleLeft > 0 ? column.withTrimmedTop (PlaylistComponent::toolbarHeight) : column);
         playlist.setBounds (area);
     }
