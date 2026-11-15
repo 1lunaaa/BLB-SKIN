@@ -255,7 +255,7 @@ private:
     // toolbar, or Options > Toolbar; core/ToolbarLayout.h). Row height follows the icon size.
     toolbarlayout::Layout toolbarLayout = toolbarlayout::Layout::makeDefault();
     int rowHeight = toolbarlayout::rowHeight (toolbarlayout::IconSize::medium);
-    int toolbarHeight = 2 * rowHeight + 12;
+    int toolbarHeight = 76;
     toolbarlayout::IconSize appliedIconSize = toolbarlayout::IconSize::medium;
     bool compactRecord = false;
     bool narrowSnap = false; // round 170e5, 1280 px: the "+" new-pattern button takes the pattern icon's place
@@ -339,6 +339,10 @@ private:
 
     AudioEngine& engine;
 
+    void showAppMenu();
+    juce::Rectangle<int> appMenuBtnBounds() const { return { 10, 6, 30, 28 }; }
+    juce::Rectangle<int> masterPillBounds() const { return { getWidth() - 134, 42, 122, 28 }; }
+    juce::Rectangle<int> timeSigBounds() const;
     IconButton newButton { "new", Icon::newFile }, openButton { "open", Icon::open }, saveButton { "save", Icon::save },
         exportButton { "export", Icon::exportAudio }, undoButton { "undo", Icon::undo }, redoButton { "redo", Icon::redo };
     IconButton playButton { "play", Icon::play };
@@ -565,7 +569,7 @@ private:
     PianoRollComponent pianoRoll;
     PlaylistComponent playlist;
     PatternPicker picker { engine, playlist };
-    PlaylistArea playlistArea { picker, playlist };
+    PlaylistArea playlistArea { picker, playlist, engine };
     bool clipLaunchWorkflow = false, startInClipLaunchWorkflow = false;
     bool lanesBeforeClipLaunch = false; // the Automation lanes setting to go back to
     void addLayoutStyleItems (juce::PopupMenu& menu);

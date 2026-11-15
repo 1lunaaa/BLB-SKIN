@@ -12,8 +12,11 @@
 #include "engine/AudioEngine.h"
 #include "ui/EditorTools.h"
 #include "ui/FrameTicker.h"
+#include "ui/I18n.h"
 #include "ui/Theme.h"
 #include "ui/ValueControl.h"
+#include "ui/BandLabSoundsDrawer.h"
+#include "ui/BandLabFxDrawer.h"
 
 namespace lynx
 {
@@ -52,6 +55,10 @@ class PlaylistComponent final : public juce::Component,
                                 private juce::ChangeListener,
                                 private juce::ScrollBar::Listener
 {
+public:
+    std::function<void (int)> onOpenTrackFx;
+    int getSelectedTrack() const noexcept { return 0; }
+
 public:
     // What the pencil paints (chosen in the Picker): the current pattern, an audio clip or an automation clip.
     struct Brush
@@ -144,13 +151,13 @@ public:
     // hovers the right edge of the first clip in view (grip, outline, menu button); returns its hint
     ui::Hint hoverForSnapshot();
 
-    static constexpr int headerWidth = 96;
+    static constexpr int headerWidth = 240;
     static constexpr int toolbarHeight = 32; // the panel title row (Workspace::titleHeight)
     static constexpr int overviewHeight = 16; // the overview strip under the toolbar (round 90)
     static constexpr int timelineHeight = 24;
     static constexpr int rulerTop = toolbarHeight + overviewHeight;
     static constexpr int headerHeight = rulerTop + timelineHeight;
-    static constexpr int trackHeight = 52; // the default row height (each track can be resized: P18)
+    static constexpr int trackHeight = 82; // BandLab-style track card height
     static constexpr int foldedHeight = 7; // a member of a collapsed group: a thin row of clip bars (as FL)
     static constexpr int groupIndent = 8;  // grouped tracks' headers are indented under their group header
     static constexpr int scrollBarSize = 12;
@@ -179,7 +186,13 @@ public:
 
 private:
     enum class Drag { none, move, resize, trimLeft, slip, erase, seek, loop, select, fadeIn, fadeOut, paint, muting, knife, zoomRange, listen, pan, timeMove, timeShift, autoPoint, autoTension,
-                      trackResize, preview, trackZoom, heightZoom, timeZoom, perfLaunch, clipGain };
+                      trackResize, preview, trackZoom, heightZoom, timeZoom, perfLaunch, clipGain, blbVolume, blbPan };
+    juce::Rectangle<int> addTrackButtonBounds() const;
+    void showAddTrackMenu();
+    void addBandLabTrack (int kind); // 0 = Voz/Audio, 1 = Instrumento, 2 = Drum Machine
+    int blbControlTrack = -1;
+    float blbStartValue = 0.0f;
+    int blbStartX = 0;
     // Performance mode (round 165m): the clip a click launched (its release goes with the mouse button)
     int perfTrack = -1;
     std::int64_t perfClip = -1;
@@ -544,15 +557,105 @@ private:
     static constexpr int rowHeight = 28, headerHeight = 26, footerHeight = 22;
 };
 
-// The Playlist tab: the Picker on the left and the Playlist (does not own them).
+// The Playlist tab: the Picker on the left, Playlist, BandLab bottom dock and Sounds drawer.
 class PlaylistArea final : public juce::Component,
-                           public SharesTitleBar
+                           public SharesTitleBar,
+                           private juce::ChangeListener
 {
 public:
-    PlaylistArea (PatternPicker& p, PlaylistComponent& l) : picker (p), playlist (l)
+    std::function<void()> onOpenEffects;
+    std::function<void()> onOpenEditor;
+
+    std::function<void (int track, int slot)> onOpenSlotEditor;
+
+    PlaylistArea (PatternPicker& p, PlaylistComponent& l, AudioEngine& eng)
+        : engine (eng), picker (p), playlist (l), soundsDrawer (eng), fxDrawer (eng)
     {
         addAndMakeVisible (picker);
         addAndMakeVisible (playlist);
+        addChildComponent (soundsDrawer);
+        addChildComponent (fxDrawer);
+
+        soundsDrawer.onInsertSample = [this] (const juce::File& f) { playlist.addAudioClipAtPlayhead (f); };
+        soundsDrawer.onClose = [this] { toggleSoundsDrawer (false); };
+
+        fxDrawer.onClose = [this] { toggleFxDrawer (false); };
+        fxDrawer.onOpenSlotEditor = [this] (int t, int slot) {
+            if (onOpenSlotEditor) onOpenSlotEditor (t, slot);
+        };
+
+        playlist.onOpenTrackFx = [this] (int trackIdx) {
+            fxDrawer.setTrack (trackIdx + 1);
+            toggleFxDrawer (true);
+        };
+
+        for (auto* b : { &fxTabButton, &editorTabButton, &soundsTabButton })
+        {
+            b->setClickingTogglesState (false);
+            b->setWantsKeyboardFocus (false);
+            addAndMakeVisible (*b);
+        }
+        fxTabButton.setButtonText (tr ("Fx Efectos"));
+        editorTabButton.setButtonText (tr ("Editor"));
+        soundsTabButton.setButtonText (tr ("BandLab Sounds / Ritmos"));
+
+        fxTabButton.onClick = [this] {
+            fxDrawer.setTrack (juce::jmax (1, playlist.getSelectedTrack() + 1));
+            toggleFxDrawer (! fxOpen);
+        };
+        editorTabButton.onClick = [this] { if (onOpenEditor) onOpenEditor(); };
+        soundsTabButton.onClick = [this] { toggleSoundsDrawer (! soundsOpen); };
+        engine.addChangeListener (this);
+        syncTrackDependentButtons();
+    }
+
+    ~PlaylistArea() override
+    {
+        engine.removeChangeListener (this);
+    }
+
+    void changeListenerCallback (juce::ChangeBroadcaster*) override
+    {
+        const bool wasShown = fxTabButton.isVisible();
+        syncTrackDependentButtons();
+        if (wasShown != fxTabButton.isVisible())
+        {
+            resized();
+            repaint();
+        }
+    }
+
+    void syncTrackDependentButtons()
+    {
+        const bool hasTracks = ! engine.getSong().playlistTracks.empty();
+        fxTabButton.setVisible (hasTracks);
+        editorTabButton.setVisible (hasTracks);
+        if (! hasTracks && fxOpen)
+        {
+            fxOpen = false;
+            fxTabButton.setToggleState (false, juce::dontSendNotification);
+            fxDrawer.setVisible (false);
+        }
+    }
+
+    void toggleSoundsDrawer (bool open)
+    {
+        soundsOpen = open;
+        soundsTabButton.setToggleState (soundsOpen, juce::dontSendNotification);
+        soundsDrawer.setVisible (soundsOpen);
+        if (soundsOpen)
+            soundsDrawer.refreshPacks();
+        resized();
+        repaint();
+    }
+
+    void toggleFxDrawer (bool open)
+    {
+        fxOpen = open;
+        fxTabButton.setToggleState (fxOpen, juce::dontSendNotification);
+        fxDrawer.setVisible (fxOpen);
+        resized();
+        repaint();
     }
 
     // the toolbar row runs across the whole window (as the title bar); the picker starts under it
@@ -583,9 +686,33 @@ public:
         resized();
     }
 
+    static constexpr int bottomBarHeight = 36;
+    static constexpr int soundsDrawerWidth = 340;
+    static constexpr int fxDrawerHeight = 205;
+
     void resized() override
     {
+        syncTrackDependentButtons();
         auto area = getLocalBounds();
+        auto bottomBar = area.removeFromBottom (bottomBarHeight);
+        const int pad = 5;
+        auto leftGroup = bottomBar.reduced (10, pad);
+        if (fxTabButton.isVisible())
+            fxTabButton.setBounds (leftGroup.removeFromLeft (104));
+        leftGroup.removeFromLeft (8);
+        if (editorTabButton.isVisible())
+            editorTabButton.setBounds (leftGroup.removeFromLeft (96));
+        soundsTabButton.setBounds (leftGroup.removeFromRight (196));
+
+        if (soundsOpen)
+        {
+            const auto top = titleLeft > 0 ? PlaylistComponent::toolbarHeight : 0;
+            soundsDrawer.setBounds (area.removeFromRight (juce::jmin (soundsDrawerWidth, area.getWidth() / 2)).withTrimmedTop (top));
+        }
+        if (fxOpen)
+        {
+            fxDrawer.setBounds (area.removeFromBottom (juce::jmin (fxDrawerHeight, area.getHeight() / 2)));
+        }
         if (clipGrid != nullptr && gridView != GridView::song)
         {
             // (under the band the title bar shares with the Playlist's toolbar)
@@ -619,11 +746,24 @@ public:
         g.fillRect (0, 0, bandWidth, PlaylistComponent::toolbarHeight);
         g.setColour (theme::colour::border);
         g.fillRect (0, PlaylistComponent::toolbarHeight - 1, bandWidth, 1);
+
+        // BandLab bottom dock bar
+        const auto bar = getLocalBounds().removeFromBottom (bottomBarHeight);
+        g.setColour (theme::colour::bg1);
+        g.fillRect (bar);
+        g.setColour (theme::colour::border);
+        g.fillRect (bar.getX(), bar.getY(), bar.getWidth(), 1);
     }
 
 private:
+    AudioEngine& engine;
     PatternPicker& picker;
     PlaylistComponent& playlist;
+    BandLabSoundsDrawer soundsDrawer;
+    BandLabFxDrawer fxDrawer;
+    juce::TextButton fxTabButton, editorTabButton, soundsTabButton;
+    bool soundsOpen = false;
+    bool fxOpen = false;
     int titleLeft = 0;
     juce::Component* clipGrid = nullptr;
     GridView gridView = GridView::beside;

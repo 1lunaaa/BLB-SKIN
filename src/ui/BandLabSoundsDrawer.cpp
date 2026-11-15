@@ -1,0 +1,455 @@
+#include "ui/BandLabSoundsDrawer.h"
+
+#include "engine/PluginHost.h"
+#include "ui/BrowserComponent.h"
+#include "ui/I18n.h"
+#include "ui/Icons.h"
+
+namespace lynx
+{
+namespace
+{
+bool isSupportedMedia (const juce::File& f)
+{
+    return f.hasFileExtension ("wav;aif;aiff;flac;ogg;mp3;wv;mid;midi");
+}
+
+bool isImageFile (const juce::File& f)
+{
+    return f.hasFileExtension ("png;jpg;jpeg;webp;bmp");
+}
+} // namespace
+
+BandLabSoundsDrawer::BandLabSoundsDrawer (AudioEngine& e)
+    : engine (e)
+{
+    searchBox.setTextToShowWhenEmpty (tr ("Buscar packs o samples..."), theme::colour::textDisabled);
+    searchBox.addListener (this);
+    addAndMakeVisible (searchBox);
+    refreshPacks();
+}
+
+BandLabSoundsDrawer::~BandLabSoundsDrawer()
+{
+    engine.previewFile ({});
+}
+
+void BandLabSoundsDrawer::refreshPacks()
+{
+    rootFolders.clear();
+    const auto foldersFile = PluginHost::settingsFolder().getChildFile ("browser-folders.txt");
+    for (const auto& line : juce::StringArray::fromLines (foldersFile.loadFileAsString()))
+    {
+        const juce::File dir (line.trim());
+        if (dir.isDirectory())
+            rootFolders.push_back (dir);
+    }
+
+    const auto music = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+    if (music.isDirectory())
+        rootFolders.push_back (music);
+
+    const auto downloads = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Downloads");
+    if (downloads.isDirectory())
+        rootFolders.push_back (downloads);
+
+    rebuildVisibleRows();
+}
+
+juce::Image BandLabSoundsDrawer::coverForFolder (const juce::File& folder)
+{
+    const auto key = folder.getFullPathName();
+    if (const auto it = coverCache.find (key); it != coverCache.end())
+        return it->second;
+
+    juce::File chosen;
+    for (const auto* preferred : { "cover.jpg", "cover.png", "folder.jpg", "folder.png", "artwork.jpg", "artwork.png" })
+    {
+        if (const auto f = folder.getChildFile (preferred); f.existsAsFile())
+        {
+            chosen = f;
+            break;
+        }
+    }
+    if (! chosen.existsAsFile())
+    {
+        for (const auto& entry : juce::RangedDirectoryIterator (folder, false, "*", juce::File::findFiles))
+        {
+            if (isImageFile (entry.getFile()))
+            {
+                chosen = entry.getFile();
+                break;
+            }
+        }
+    }
+
+    juce::Image img;
+    if (chosen.existsAsFile())
+    {
+        auto loaded = juce::ImageFileFormat::loadFrom (chosen);
+        if (loaded.isValid())
+            img = loaded.rescaled (96, 96, juce::Graphics::highResamplingQuality);
+    }
+    coverCache[key] = img;
+    return img;
+}
+
+void BandLabSoundsDrawer::rebuildVisibleRows()
+{
+    rows.clear();
+    const auto filter = searchBox.getText().trim().toLowerCase();
+    const std::uint32_t palette[] = { 0xff00c4b4, 0xfff12c33, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xffec4899 };
+
+    for (std::size_t i = 0; i < rootFolders.size(); ++i)
+    {
+        const auto& dir = rootFolders[i];
+        const auto path = dir.getFullPathName();
+        const bool isExp = expandedPaths.count (path) > 0 || filter.isNotEmpty();
+
+        int audioCount = 0, dirCount = 0;
+        for (const auto& entry : juce::RangedDirectoryIterator (dir, false, "*", juce::File::findFilesAndDirectories))
+        {
+            if (entry.isDirectory())
+                ++dirCount;
+            else if (isSupportedMedia (entry.getFile()))
+                ++audioCount;
+        }
+
+        const auto name = dir.getFileName();
+        const bool selfMatch = filter.isEmpty() || name.toLowerCase().contains (filter);
+
+        Item pack;
+        pack.file = dir;
+        pack.title = name;
+        pack.subtitle = juce::String (audioCount) + " samples" + (dirCount > 0 ? "  ·  " + juce::String (dirCount) + " carpetas" : "");
+        pack.depth = 0;
+        pack.isFolder = true;
+        pack.expanded = isExp;
+        pack.fallbackColour = palette[i % 6];
+
+        const auto startIdx = rows.size();
+        rows.push_back (std::move (pack));
+
+        if (isExp)
+            appendFolderChildren (dir, 1, filter);
+
+        if (! selfMatch && rows.size() == startIdx + 1)
+            rows.pop_back();
+    }
+
+    rowTops.assign (rows.size() + 1, 0);
+    for (std::size_t i = 0; i < rows.size(); ++i)
+        rowTops[i + 1] = rowTops[i] + rowHeight (rows[i]);
+
+    const int maxScroll = juce::jmax (0, rowTops.back() - juce::jmax (1, getHeight() - topBarHeight));
+    scrollY = juce::jlimit (0, maxScroll, scrollY);
+    repaint();
+}
+
+void BandLabSoundsDrawer::appendFolderChildren (const juce::File& folder, int depth, const juce::String& filter)
+{
+    std::vector<juce::File> subDirs, mediaFiles;
+    for (const auto& entry : juce::RangedDirectoryIterator (folder, false, "*", juce::File::findFilesAndDirectories))
+    {
+        const auto f = entry.getFile();
+        if (f.getFileName().startsWith ("."))
+            continue;
+        if (entry.isDirectory())
+            subDirs.push_back (f);
+        else if (isSupportedMedia (f))
+            mediaFiles.push_back (f);
+    }
+
+    std::sort (subDirs.begin(), subDirs.end(), [] (const auto& a, const auto& b) { return a.getFileName().compareNatural (b.getFileName()) < 0; });
+    std::sort (mediaFiles.begin(), mediaFiles.end(), [] (const auto& a, const auto& b) { return a.getFileName().compareNatural (b.getFileName()) < 0; });
+
+    for (const auto& d : subDirs)
+    {
+        const auto path = d.getFullPathName();
+        const bool isExp = expandedPaths.count (path) > 0 || filter.isNotEmpty();
+        const bool selfMatch = filter.isEmpty() || d.getFileName().toLowerCase().contains (filter);
+
+        Item item;
+        item.file = d;
+        item.title = d.getFileName();
+        item.depth = depth;
+        item.isFolder = true;
+        item.expanded = isExp;
+        const auto startIdx = rows.size();
+        rows.push_back (std::move (item));
+
+        if (isExp && depth < 4)
+            appendFolderChildren (d, depth + 1, filter);
+
+        if (! selfMatch && rows.size() == startIdx + 1)
+            rows.pop_back();
+    }
+
+    for (const auto& f : mediaFiles)
+    {
+        if (filter.isNotEmpty() && ! f.getFileNameWithoutExtension().toLowerCase().contains (filter))
+            continue;
+        Item item;
+        item.file = f;
+        item.title = f.getFileNameWithoutExtension();
+        item.subtitle = f.getFileExtension().toUpperCase().trimCharactersAtStart (".");
+        item.depth = depth;
+        item.isFolder = false;
+        rows.push_back (std::move (item));
+    }
+}
+
+int BandLabSoundsDrawer::rowAt (int y) const
+{
+    if (y < topBarHeight || rows.empty())
+        return -1;
+    const int offset = y - topBarHeight + scrollY;
+    if (offset < 0 || offset >= rowTops.back())
+        return -1;
+    const auto it = std::upper_bound (rowTops.begin(), rowTops.end(), offset);
+    return juce::jlimit (0, (int) rows.size() - 1, (int) (it - rowTops.begin()) - 1);
+}
+
+void BandLabSoundsDrawer::resized()
+{
+    searchBox.setBounds (14, 46, getWidth() - 28, 28);
+}
+
+void BandLabSoundsDrawer::paint (juce::Graphics& g)
+{
+    using namespace theme;
+    g.fillAll (colour::bg1);
+    g.setColour (colour::border);
+    g.fillRect (0, 0, 1, getHeight());
+
+    // Header: BandLab Sounds title + "+ Carpeta" pill + close button
+    g.setColour (colour::accent);
+    g.fillEllipse (16.0f, 16.0f, 14.0f, 14.0f);
+    g.setColour (colour::textPrimary);
+    g.setFont (font (type::title, true));
+    g.drawText (tr ("BandLab Sounds"), 36, 11, 165, 24, juce::Justification::centredLeft, false);
+
+    const auto addBtn = juce::Rectangle<float> ((float) getWidth() - 114.0f, 12.0f, 76.0f, 24.0f);
+    fillRoundRect (g, addBtn, 12.0f, colour::bg4);
+    g.setColour (colour::borderStrong);
+    g.drawRoundedRectangle (addBtn.reduced (0.5f), 12.0f, 1.0f);
+    g.setColour (colour::textPrimary);
+    g.setFont (font (type::caption, true));
+    g.drawText (tr ("+ Carpeta"), addBtn.toNearestInt(), juce::Justification::centred, false);
+
+    const auto closeBtn = juce::Rectangle<float> ((float) getWidth() - 32.0f, 12.0f, 22.0f, 24.0f);
+    g.setColour (colour::textSecondary);
+    g.drawText ("X", closeBtn.toNearestInt(), juce::Justification::centred, false);
+
+    // List clip
+    juce::Graphics::ScopedSaveState state (g);
+    g.reduceClipRegion (0, topBarHeight, getWidth(), getHeight() - topBarHeight);
+
+    for (int i = 0; i < (int) rows.size(); ++i)
+    {
+        const int y = topBarHeight + rowTops[(std::size_t) i] - scrollY;
+        const int h = rowHeight (rows[(std::size_t) i]);
+        if (y > getHeight() || y + h < topBarHeight)
+            continue;
+
+        const auto& item = rows[(std::size_t) i];
+        const bool isPlaying = ! item.isFolder && item.file == playingFile;
+        const bool isHover = i == hoverRow;
+
+        if (item.depth == 0)
+        {
+            const auto card = juce::Rectangle<float> (10.0f, (float) y + 3.0f, (float) getWidth() - 20.0f, (float) h - 6.0f);
+            fillRoundRect (g, card, radius::md, isHover ? colour::bg3 : colour::bg2);
+
+            // Cover image (46x46)
+            const auto art = juce::Rectangle<float> (card.getX() + 7.0f, card.getY() + 6.0f, 46.0f, 46.0f);
+            const auto cover = coverForFolder (item.file);
+            if (cover.isValid())
+            {
+                juce::Path clip;
+                clip.addRoundedRectangle (art, radius::sm);
+                juce::Graphics::ScopedSaveState artState (g);
+                g.reduceClipRegion (clip);
+                g.drawImage (cover, art, juce::RectanglePlacement::fillDestination);
+            }
+            else
+            {
+                fillRoundRect (g, art, radius::sm, juce::Colour (item.fallbackColour).withAlpha (0.28f));
+                icons::draw (g, Icon::audioFile, art.withSizeKeepingCentre (22.0f, 22.0f), juce::Colour (item.fallbackColour));
+            }
+
+            // Title & subtitle
+            const float textX = art.getRight() + 10.0f;
+            const float textW = card.getRight() - textX - 34.0f;
+            g.setColour (colour::textPrimary);
+            g.setFont (font (type::body, true));
+            g.drawFittedText (item.title, juce::Rectangle<int> ((int) textX, (int) art.getY() + 2, (int) textW, 20),
+                              juce::Justification::centredLeft, 1, 0.85f);
+            g.setColour (colour::textSecondary);
+            g.setFont (font (type::caption, false));
+            g.drawFittedText (item.subtitle, juce::Rectangle<int> ((int) textX, (int) art.getY() + 24, (int) textW, 18),
+                              juce::Justification::centredLeft, 1, 0.85f);
+
+            // Down / Right chevron arrow on right
+            const auto arrowArea = juce::Rectangle<float> (card.getRight() - 30.0f, card.getCentreY() - 11.0f, 22.0f, 22.0f);
+            fillRoundRect (g, arrowArea, 11.0f, item.expanded ? colour::accent.withAlpha (0.22f) : colour::bg4);
+            juce::Graphics::ScopedSaveState rotState (g);
+            if (! item.expanded)
+                g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, arrowArea.getCentreX(), arrowArea.getCentreY()));
+            icons::draw (g, Icon::chevronDown, arrowArea.withSizeKeepingCentre (13.0f, 13.0f),
+                         item.expanded ? colour::accent : colour::textPrimary);
+        }
+        else
+        {
+            const float indent = 14.0f + (float) (item.depth - 1) * 14.0f;
+            const auto rowRect = juce::Rectangle<float> (indent, (float) y + 1.0f, (float) getWidth() - indent - 10.0f, (float) h - 2.0f);
+            if (isPlaying || isHover)
+                fillRoundRect (g, rowRect, radius::sm, isPlaying ? colour::accentMuted : colour::bg3);
+
+            const auto iconArea = juce::Rectangle<float> (rowRect.getX() + 6.0f, rowRect.getCentreY() - 7.0f, 14.0f, 14.0f);
+            if (item.isFolder)
+            {
+                juce::Graphics::ScopedSaveState rotState (g);
+                if (! item.expanded)
+                    g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, iconArea.getCentreX(), iconArea.getCentreY()));
+                icons::draw (g, Icon::chevronDown, iconArea, colour::textSecondary);
+            }
+            else
+            {
+                icons::draw (g, isPlaying ? Icon::play : Icon::audioFile, iconArea, isPlaying ? colour::accent : colour::audioClip);
+            }
+
+            g.setColour (isPlaying ? colour::textPrimary : (item.isFolder ? colour::textPrimary : colour::textSecondary.brighter (0.25f)));
+            g.setFont (font (type::smallSize, item.isFolder || isPlaying));
+            g.drawFittedText (item.title, juce::Rectangle<int> ((int) iconArea.getRight() + 6, y, (int) (rowRect.getRight() - iconArea.getRight() - 42.0f), h),
+                              juce::Justification::centredLeft, 1, 0.85f);
+
+            if (! item.isFolder)
+            {
+                g.setColour (colour::textDisabled);
+                g.setFont (font (10.0f, true));
+                g.drawText (item.subtitle, (int) rowRect.getRight() - 36, y, 30, h, juce::Justification::centredRight, false);
+            }
+        }
+    }
+}
+
+void BandLabSoundsDrawer::mouseMove (const juce::MouseEvent& e)
+{
+    const int r = rowAt (e.y);
+    if (r != hoverRow)
+    {
+        hoverRow = r;
+        repaint();
+    }
+}
+
+void BandLabSoundsDrawer::mouseExit (const juce::MouseEvent&)
+{
+    if (hoverRow != -1)
+    {
+        hoverRow = -1;
+        repaint();
+    }
+}
+
+void BandLabSoundsDrawer::mouseDown (const juce::MouseEvent& e)
+{
+    downPos = e.getPosition();
+    dragStarted = false;
+
+    const auto addBtn = juce::Rectangle<int> (getWidth() - 114, 12, 76, 24);
+    if (addBtn.contains (e.getPosition()))
+    {
+        addFolderDialog();
+        return;
+    }
+
+    const auto closeBtn = juce::Rectangle<int> (getWidth() - 32, 12, 22, 24);
+    if (closeBtn.contains (e.getPosition()))
+    {
+        if (onClose)
+            onClose();
+        return;
+    }
+
+    const int r = rowAt (e.y);
+    if (r < 0 || r >= (int) rows.size())
+        return;
+
+    const auto& item = rows[(std::size_t) r];
+    if (item.isFolder)
+    {
+        const auto path = item.file.getFullPathName();
+        if (expandedPaths.count (path) > 0)
+            expandedPaths.erase (path);
+        else
+            expandedPaths.insert (path);
+        rebuildVisibleRows();
+    }
+    else
+    {
+        playingFile = item.file;
+        engine.previewFile (item.file);
+        repaint();
+    }
+}
+
+void BandLabSoundsDrawer::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    const int r = rowAt (e.y);
+    if (r < 0 || r >= (int) rows.size())
+        return;
+    const auto& item = rows[(std::size_t) r];
+    if (! item.isFolder && onInsertSample)
+        onInsertSample (item.file);
+}
+
+void BandLabSoundsDrawer::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragStarted || e.getPosition().getDistanceFrom (downPos) < 6)
+        return;
+    const int r = rowAt (downPos.y);
+    if (r < 0 || r >= (int) rows.size())
+        return;
+    const auto& item = rows[(std::size_t) r];
+    if (item.isFolder)
+        return;
+
+    if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor (this))
+    {
+        dragStarted = true;
+        juce::var desc (juce::String (BrowserComponent::dragDescription) + "|" + item.file.getFullPathName());
+        container->startDragging (desc, this);
+    }
+}
+
+void BandLabSoundsDrawer::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
+{
+    if (rowTops.empty())
+        return;
+    const int maxScroll = juce::jmax (0, rowTops.back() - juce::jmax (1, getHeight() - topBarHeight));
+    scrollY = juce::jlimit (0, maxScroll, scrollY - juce::roundToInt (wheel.deltaY * 72.0f));
+    repaint();
+}
+
+void BandLabSoundsDrawer::addFolderDialog()
+{
+    chooser = std::make_unique<juce::FileChooser> (tr ("Seleccionar carpeta de samples / beats"),
+                                                   juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this] (const juce::FileChooser& fc) {
+                              const auto dir = fc.getResult();
+                              if (! dir.isDirectory())
+                                  return;
+                              const auto file = PluginHost::settingsFolder().getChildFile ("browser-folders.txt");
+                              file.getParentDirectory().createDirectory();
+                              auto lines = juce::StringArray::fromLines (file.loadFileAsString());
+                              lines.removeEmptyStrings();
+                              lines.addIfNotAlreadyThere (dir.getFullPathName());
+                              file.replaceWithText (lines.joinIntoString ("\n"));
+                              expandedPaths.insert (dir.getFullPathName());
+                              refreshPacks();
+                          });
+}
+} // namespace lynx

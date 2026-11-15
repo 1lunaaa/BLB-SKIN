@@ -10,8 +10,8 @@
 // text stays readable. With LYNX's default accent and background it gives exactly the built-in palette.
 namespace lynx::themes
 {
-constexpr std::uint32_t defaultAccent = 0xffe5383b;     // LYNX red
-constexpr std::uint32_t defaultBackground = 0xff15161a; // the app background (token bg1)
+constexpr std::uint32_t defaultAccent = 0xfff12c33;     // BandLab coral-red
+constexpr std::uint32_t defaultBackground = 0xff17191e; // BandLab dark slate (token bg1)
 
 // Every themeable token of ui/Theme.h (ARGB).
 struct Palette
@@ -73,7 +73,7 @@ ImageFit imageFitFromId (const std::string& id);
 // A theme: what a .lynxtheme file holds and what Options › Theme edits.
 struct Spec
 {
-    std::string name = "LYNX";
+    std::string name = "BandLab";
     std::uint32_t accent = defaultAccent;
     std::uint32_t background = defaultBackground;
     std::uint32_t workspace = 0;     // the workspace backdrop's colour; 0 = automatic (the theme's deepest surface)

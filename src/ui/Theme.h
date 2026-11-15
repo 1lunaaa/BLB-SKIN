@@ -17,13 +17,13 @@ namespace lynx::theme
 namespace colour
 {
 // backgrounds by elevation (0 = deepest)
-inline juce::Colour bg0 { 0xff0e0f12 };   // editor canvases, insets, meter wells
-inline juce::Colour bg1 { 0xff15161a };   // app background, menu bar, status bar
-inline juce::Colour bg2 { 0xff1b1d22 };   // panels (browser, rack, mixer strips)
-inline juce::Colour bg3 { 0xff23262c };   // raised surfaces: toolbar, headers, popups
-inline juce::Colour bg4 { 0xff2c2f37 };   // controls at rest
-inline juce::Colour bg5 { 0xff363a43 };   // controls hovered
-inline juce::Colour bg6 { 0xff434852 };   // controls pressed / neutral "on"
+inline juce::Colour bg0 { 0xff101114 };   // editor canvases, insets, meter wells
+inline juce::Colour bg1 { 0xff17191e };   // app background, menu bar, status bar
+inline juce::Colour bg2 { 0xff1f2229 };   // panels (browser, rack, mixer strips)
+inline juce::Colour bg3 { 0xff272b33 };   // raised surfaces: toolbar, headers, popups
+inline juce::Colour bg4 { 0xff313640 };   // controls at rest
+inline juce::Colour bg5 { 0xff3c424e };   // controls hovered
+inline juce::Colour bg6 { 0xff49505e };   // controls pressed / neutral "on"
 
 inline juce::Colour border { 0xff2a2d34 };       // hairlines between areas
 inline juce::Colour borderStrong { 0xff3b3f48 }; // control outlines
@@ -33,10 +33,10 @@ inline juce::Colour textSecondary { 0xffa1a6b0 };
 inline juce::Colour textDisabled { 0xff60656f };
 
 // the red accent
-inline juce::Colour accent { 0xffe5383b };
-inline juce::Colour accentHover { 0xfff2545a };
-inline juce::Colour accentPressed { 0xffc12a30 };
-inline juce::Colour accentMuted { 0xff5c1f24 };  // tinted backgrounds (armed, selected rows)
+inline juce::Colour accent { 0xfff12c33 };
+inline juce::Colour accentHover { 0xffff474e };
+inline juce::Colour accentPressed { 0xffc91e24 };
+inline juce::Colour accentMuted { 0xff591c20 };  // tinted backgrounds (armed, selected rows)
 inline juce::Colour onAccent { 0xffffffff };     // text/icons drawn on the accent
 
 // semantic
@@ -70,7 +70,7 @@ inline juce::Colour rowBlack { 0xff16171b };     // rows of black keys
 inline juce::Colour noteSoft { 0xffb3545a };     // note colour at velocity 0
 inline juce::Colour noteHard { 0xffff6b6e };     // note colour at velocity 1
 inline juce::Colour noteMuted { 0xff4a4e57 };
-inline juce::Colour audioClip { 0xff5a87b8 };
+inline juce::Colour audioClip { 0xff00c4b4 };
 } // namespace colour
 
 // User themes (round 162d): the tokens above hold LYNX's built-in look until a theme replaces them (ui/ThemeSettings.h
@@ -133,7 +133,7 @@ inline constexpr int xs = 2, sm = 4, md = 8, lg = 12, xl = 16;
 
 namespace radius
 {
-inline constexpr float sm = 3.0f, md = 4.0f, lg = 6.0f;
+inline constexpr float sm = 4.0f, md = 6.0f, lg = 8.0f;
 }
 
 // --- helpers -------------------------------------------------------------------------------------

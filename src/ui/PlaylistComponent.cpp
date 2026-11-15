@@ -1107,14 +1107,18 @@ int PlaylistComponent::trackToY (int track) const
 
 int PlaylistComponent::yToTrack (int y) const
 {
+    const auto count = numTracks();
+    if (count <= 0)
+        return -1;
+
     const auto offset = y - tracksTop() + scrollY;
 
     if (trackTops.size() < 2)
-        return juce::jlimit (0, numTracks() - 1, offset / defaultRowHeight());
+        return juce::jlimit (0, count - 1, offset / defaultRowHeight());
 
     const auto it = std::upper_bound (trackTops.begin(), trackTops.end(), offset);
     const auto index = (int) (it - trackTops.begin()) - 1;
-    return juce::jlimit (0, numTracks() - 1, index);
+    return juce::jlimit (0, count - 1, index);
 }
 
 int PlaylistComponent::dividerAt (juce::Point<int> p) const
@@ -1152,15 +1156,10 @@ void PlaylistComponent::setTrackHeights (std::vector<int> tracks, int height)
 
 int PlaylistComponent::numTracks() const
 {
-    int highest = 0;
-
+    int highest = (int) engine.getSong().playlistTracks.size() - 1;
     for (const auto& c : engine.getSong().playlist)
         highest = juce::jmax (highest, c.track);
-
-    // Options › Mixer › "Playlist tracks shown" (round 163; 16 by default): at least that many, and always a few free
-    // tracks under the last clip
-    const auto least = juce::jlimit (1, 500, newProjectDefaults().playlistTracks);
-    return juce::jlimit (least, 500, highest + 1 + juce::jlimit (1, 7, least / 2));
+    return juce::jlimit (0, 500, highest + 1);
 }
 
 std::int64_t PlaylistComponent::gridTicks() const
@@ -1342,6 +1341,25 @@ void PlaylistComponent::paint (juce::Graphics& g)
             g.fillRect (grid.getX(), y, grid.getWidth(), trackHeight);
             g.setColour (colour::bg0);
             g.drawHorizontalLine (y + trackHeight - 1, (float) grid.getX(), (float) grid.getRight());
+        }
+
+        if (tracks == 0)
+        {
+            const auto dropBox = grid.reduced (28, 32).withHeight (juce::jmin (140, juce::jmax (80, grid.getHeight() - 64))).toFloat();
+            if (dropBox.getWidth() > 80.0f && dropBox.getHeight() > 40.0f)
+            {
+                juce::Path boxPath;
+                boxPath.addRoundedRectangle (dropBox, 10.0f);
+                juce::Path dashed;
+                const float dashes[] = { 6.0f, 5.0f };
+                juce::PathStrokeType (1.5f).createDashedStroke (dashed, boxPath, dashes, 2);
+                g.setColour (colour::borderStrong);
+                g.fillPath (dashed);
+
+                g.setColour (colour::textPrimary);
+                g.setFont (font (type::body, true));
+                textcache::drawText (g, tr ("Suelta un bucle o un archivo audio/MIDI/video"), dropBox.toNearestInt(), juce::Justification::centred);
+            }
         }
 
         const auto beatPixels = ppq * pixelsPerTick;
@@ -1729,22 +1747,26 @@ void PlaylistComponent::paint (juce::Graphics& g)
                 const auto member = noteedit::groupHeaderOf (song, t) >= 0 && ! noteedit::isGroupHeader (song, t);
                 const auto groupHead = noteedit::isGroupHeader (song, t);
                 const auto left = member ? (float) groupIndent : 2.0f;
-                auto plate = muted ? colour::bg2 : colour::bg3;
                 const auto trackColour = colourOf (t);
-                if (trackColour != 0) // the track's colour (FL projects colour their track headers by group)
-                    plate = plate.interpolatedWith (tame (juce::Colour (trackColour)), muted ? 0.22f : (groupHead ? 0.62f : 0.5f));
+                const auto accentCol = trackColour != 0 ? juce::Colour (trackColour) : colour::audioClip;
+                auto plate = isTrackSelected (t) ? colour::bg3 : colour::bg2.brighter (0.04f);
                 if (hovered)
-                    plate = plate.interpolatedWith (colour::bg5, 0.6f);
-                const auto plateArea = juce::Rectangle<float> (left, (float) y + 1.0f, (float) headerWidth - 2.0f - left, (float) trackHeight - 3.0f);
+                    plate = plate.brighter (0.06f);
+                const auto plateArea = juce::Rectangle<float> (left + 2.0f, (float) y + 2.0f, (float) headerWidth - 6.0f - left, (float) trackHeight - 4.0f);
                 g.setColour (plate);
-                g.fillRoundedRectangle (plateArea, radius::sm);
+                g.fillRoundedRectangle (plateArea, radius::md);
+                g.setColour (isTrackSelected (t) ? accentCol.withAlpha (0.75f) : colour::border);
+                g.drawRoundedRectangle (plateArea.reduced (0.5f), radius::md, 1.0f);
 
-                if (isTrackSelected (t)) // the selected tracks (FL marks them next to the LED)
+                // Barra de color vertical izquierda estilo BandLab
+                g.setColour (muted ? colour::textDisabled : accentCol);
+                g.fillRoundedRectangle (plateArea.withWidth (4.0f).reduced (0.0f, 4.0f), 2.0f);
+
+                auto textLeft = (int) left + 10;
+                auto textRight = (float) headerWidth - 19.0f;
+                if (trackHeight < 56)
                 {
-                    g.setColour (colour::accent);
-                    g.fillRoundedRectangle (plateArea.withWidth (3.0f).reduced (0.0f, 3.0f), 1.5f);
-                }
-
+                textLeft = (int) left + 6;
                 const auto led = trackLed (t).toFloat();
                 g.setColour (muteLed (muted));
                 g.fillEllipse (led.withSizeKeepingCentre (8.0f, 8.0f));
@@ -1754,7 +1776,7 @@ void PlaylistComponent::paint (juce::Graphics& g)
                     g.drawEllipse (led.withSizeKeepingCentre (12.0f, 12.0f), 1.0f);
                 }
 
-                auto textRight = led.getX() - 2.0f;
+                textRight = led.getX() - 2.0f;
 
                 // an audio track's record arm (and, on tall rows, input) button: red while its mixer track is armed (FL 2026)
                 if (const auto armBox = trackArm (t); ! armBox.isEmpty())
@@ -1811,7 +1833,7 @@ void PlaylistComponent::paint (juce::Graphics& g)
                 }
 
                 // the track's icon before its name, as FL's track header shows it (round 168h)
-                auto textLeft = (int) left + 6;
+                textLeft = (int) left + 6;
                 if (const auto icon = trackicons::iconFor (t < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) t].icon : 0);
                     icon != trackicons::Icon::none && trackHeight >= 14)
                 {
@@ -1820,12 +1842,79 @@ void PlaylistComponent::paint (juce::Graphics& g)
                                        muted ? colour::textDisabled : colour::textSecondary.brighter (0.3f));
                     textLeft += (int) size + 4;
                 }
-                g.setColour (muted ? colour::textDisabled : (custom ? colour::textPrimary : colour::textSecondary));
-                g.setFont (font (type::smallSize, groupHead));
-                textcache::drawFittedText (g, custom ? juce::String::fromUTF8 (song.playlistTracks[(std::size_t) t].name.c_str())
-                                         : tr ("Track {0}", { juce::String (t + 1) }),
-                                  textLeft, y, juce::jmax (8, (int) textRight - textLeft - 2), trackHeight, juce::Justification::centredLeft,
-                                  trackHeight >= 30 ? 2 : 1, 0.8f);
+                }
+                // BandLab-style track card (when tall enough)
+                if (trackHeight >= 56)
+                {
+                    const auto card = plateArea.reduced (6.0f, 4.0f);
+                    const auto accentCol = trackColour != 0 ? juce::Colour (trackColour) : colour::audioClip;
+                    const auto insertIdx = t < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) t].mixerTrack : -1;
+                    const bool hasMixer = insertIdx > 0 && insertIdx < (int) song.mixer.size();
+                    const float vol = hasMixer ? song.mixer[(std::size_t) insertIdx].volume : unityFader;
+                    const float pan = hasMixer ? song.mixer[(std::size_t) insertIdx].pan : 0.0f;
+                    const bool soloed = hasMixer && song.mixer[(std::size_t) insertIdx].solo;
+
+                    // Top row: number + name on left, M and S buttons on right
+                    const auto numStr = juce::String (t + 1).paddedLeft ('0', 2) + " ";
+                    const auto titleStr = numStr + (custom ? juce::String::fromUTF8 (song.playlistTracks[(std::size_t) t].name.c_str())
+                                                           : tr ("Pista {0}", { juce::String (t + 1) }));
+                    g.setColour (muted ? colour::textDisabled : colour::textPrimary);
+                    g.setFont (font (type::smallSize, true));
+                    textcache::drawFittedText (g, titleStr, textLeft, (int) card.getY(),
+                                               juce::jmax (20, (int) card.getRight() - textLeft - 48), 20,
+                                               juce::Justification::centredLeft, 1, 0.85f);
+
+                    // M and S pill buttons
+                    const auto mBox = juce::Rectangle<float> (card.getRight() - 44.0f, card.getY() + 1.0f, 20.0f, 18.0f);
+                    const auto sBox = juce::Rectangle<float> (card.getRight() - 21.0f, card.getY() + 1.0f, 20.0f, 18.0f);
+                    theme::fillRoundRect (g, mBox, 4.0f, muted ? colour::accent : colour::bg4);
+                    g.setColour (muted ? colour::onAccent : colour::textSecondary);
+                    g.setFont (font (type::caption, true));
+                    textcache::drawText (g, "M", mBox.toNearestInt(), juce::Justification::centred);
+
+                    theme::fillRoundRect (g, sBox, 4.0f, soloed ? colour::warning : colour::bg4);
+                    g.setColour (soloed ? colour::bg0 : colour::textSecondary);
+                    textcache::drawText (g, "S", sBox.toNearestInt(), juce::Justification::centred);
+
+                    // Middle row: "+ Fx" badge
+                    const auto fxBox = juce::Rectangle<float> ((float) textLeft, card.getY() + 23.0f, 38.0f, 17.0f);
+                    theme::fillRoundRect (g, fxBox, 4.0f, colour::bg4);
+                    g.setColour (colour::textPrimary);
+                    g.setFont (font (type::caption, true));
+                    textcache::drawText (g, "+ Fx", fxBox.toNearestInt(), juce::Justification::centred);
+
+                    // Bottom row: horizontal volume slider + circular white pan knob
+                    const float bottomY = card.getBottom() - 22.0f;
+                    const auto panArea = juce::Rectangle<float> (card.getRight() - 24.0f, bottomY - 1.0f, 22.0f, 22.0f);
+                    const auto sliderArea = juce::Rectangle<float> ((float) textLeft, bottomY + 7.0f,
+                                                                    juce::jmax (30.0f, panArea.getX() - (float) textLeft - 10.0f), 4.0f);
+                    theme::fillRoundRect (g, sliderArea, 2.0f, colour::bg0);
+                    const float normVol = juce::jlimit (0.0f, 1.0f, vol);
+                    theme::fillRoundRect (g, sliderArea.withWidth (sliderArea.getWidth() * normVol), 2.0f, accentCol);
+                    g.setColour (juce::Colours::white);
+                    g.fillEllipse (sliderArea.getX() + sliderArea.getWidth() * normVol - 4.5f, sliderArea.getCentreY() - 4.5f, 9.0f, 9.0f);
+
+                    // White BandLab pan knob + L / R labels
+                    g.setColour (juce::Colour (0xffeef0f4));
+                    g.fillEllipse (panArea.reduced (2.0f));
+                    const float angle = pan * 2.2f;
+                    const auto pc = panArea.getCentre();
+                    g.setColour (colour::bg0);
+                    g.drawLine (pc.x, pc.y, pc.x + std::sin (angle) * 6.5f, pc.y - std::cos (angle) * 6.5f, 1.8f);
+                    g.setColour (colour::textDisabled);
+                    g.setFont (font (9.0f, true));
+                    textcache::drawText (g, "L", juce::Rectangle<int> ((int) panArea.getX() - 6, (int) panArea.getBottom() - 8, 8, 9), juce::Justification::centred);
+                    textcache::drawText (g, "R", juce::Rectangle<int> ((int) panArea.getRight() - 2, (int) panArea.getBottom() - 8, 8, 9), juce::Justification::centred);
+                }
+                else
+                {
+                    g.setColour (muted ? colour::textDisabled : (custom ? colour::textPrimary : colour::textSecondary));
+                    g.setFont (font (type::smallSize, groupHead));
+                    textcache::drawFittedText (g, custom ? juce::String::fromUTF8 (song.playlistTracks[(std::size_t) t].name.c_str())
+                                             : tr ("Track {0}", { juce::String (t + 1) }),
+                                      textLeft, y, juce::jmax (8, (int) textRight - textLeft - 2), trackHeight, juce::Justification::centredLeft,
+                                      trackHeight >= 30 ? 2 : 1, 0.8f);
+                }
 
                 // the divider under the header: lit while hovered or dragged (drag resizes the track)
                 if (hover.divider == t || (drag == Drag::trackResize && (resizeTrack == t || resizeAll)))
@@ -1846,6 +1935,17 @@ void PlaylistComponent::paint (juce::Graphics& g)
     g.fillRect (0, toolbarHeight - 1, getWidth(), 1);
     g.fillRect (0, headerHeight - 1, headerWidth, 1);
     g.fillRect (headerWidth - 1, toolbarHeight, 1, getHeight() - toolbarHeight);
+
+    // BandLab "+ Añadir pista" dark pill button in top-left corner beside ruler
+    {
+        const auto btn = addTrackButtonBounds().toFloat();
+        theme::fillRoundRect (g, btn, btn.getHeight() * 0.5f, colour::bg4);
+        g.setColour (colour::borderStrong);
+        g.drawRoundedRectangle (btn.reduced (0.5f), btn.getHeight() * 0.5f, 1.0f);
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::smallSize, true));
+        textcache::drawText (g, tr ("+ Añadir pista"), btn.toNearestInt(), juce::Justification::centred);
+    }
 
     // the vertical zoom handle above the scroll bar (FL's track height control): a grip of three lines
     {
@@ -2700,6 +2800,13 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // BandLab "+ Añadir pista" button click
+    if (addTrackButtonBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
+    {
+        showAddTrackMenu();
+        return;
+    }
+
     // the vertical zoom handle: drag up = taller tracks
     if (trackZoomHandle().contains (e.getPosition()) && e.mods.isLeftButtonDown())
     {
@@ -2724,7 +2831,69 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
     // group, a click elsewhere selects the track; right-click elsewhere: track menu
     if (e.x < headerWidth && e.y >= tracksTop() && e.y < gridArea().getBottom())
     {
+        if (numTracks() == 0)
+        {
+            if (e.mods.isLeftButtonDown())
+                showAddTrackMenu();
+            return;
+        }
         const auto track = yToTrack (e.y);
+        const auto y = trackToY (track);
+        const auto th = heightOf (track);
+        if (th >= 56 && e.mods.isLeftButtonDown() && y <= e.y && e.y <= y + th)
+        {
+            const auto card = juce::Rectangle<float> (2.0f, (float) y + 1.0f, (float) headerWidth - 4.0f, (float) th - 3.0f).reduced (6.0f, 4.0f);
+            const auto mBox = juce::Rectangle<float> (card.getRight() - 44.0f, card.getY() + 1.0f, 20.0f, 18.0f);
+            const auto sBox = juce::Rectangle<float> (card.getRight() - 21.0f, card.getY() + 1.0f, 20.0f, 18.0f);
+            const auto fxBox = juce::Rectangle<float> (card.getX(), card.getY() + 23.0f, 52.0f, 17.0f);
+            const float bottomY = card.getBottom() - 22.0f;
+            const auto panArea = juce::Rectangle<float> (card.getRight() - 24.0f, bottomY - 1.0f, 22.0f, 22.0f);
+            const auto sliderArea = juce::Rectangle<float> (card.getX(), bottomY, juce::jmax (30.0f, panArea.getX() - card.getX() - 8.0f), 20.0f);
+
+            const auto& song = engine.getSong();
+            const int insertIdx = track < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) track].mixerTrack : -1;
+
+            if (mBox.expanded (2.0f).contains (e.position))
+            {
+                editTrack (track, [] (PlaylistTrack& t) { t.muted = ! t.muted; });
+                return;
+            }
+            if (sBox.expanded (2.0f).contains (e.position) && insertIdx > 0)
+            {
+                engine.editSong ([insertIdx] (Song& s) {
+                    if (insertIdx < (int) s.mixer.size())
+                        s.mixer[(std::size_t) insertIdx].solo = ! s.mixer[(std::size_t) insertIdx].solo;
+                });
+                return;
+            }
+            if (fxBox.expanded (2.0f).contains (e.position) && insertIdx > 0)
+            {
+                if (onOpenTrackFx)
+                    onOpenTrackFx (track);
+                else if (onOpenMixerTrack)
+                    onOpenMixerTrack (insertIdx);
+                return;
+            }
+            if (panArea.expanded (2.0f).contains (e.position) && insertIdx > 0 && insertIdx < (int) song.mixer.size())
+            {
+                drag = Drag::blbPan;
+                blbControlTrack = insertIdx;
+                blbStartValue = song.mixer[(std::size_t) insertIdx].pan;
+                blbStartX = e.x;
+                return;
+            }
+            if (sliderArea.contains (e.position) && insertIdx > 0 && insertIdx < (int) song.mixer.size())
+            {
+                drag = Drag::blbVolume;
+                blbControlTrack = insertIdx;
+                const float norm = juce::jlimit (0.0f, 1.0f, (e.position.x - sliderArea.getX()) / juce::jmax (1.0f, sliderArea.getWidth()));
+                engine.editSong ([insertIdx, norm] (Song& s) {
+                    if (insertIdx < (int) s.mixer.size())
+                        s.mixer[(std::size_t) insertIdx].volume = norm;
+                }, false);
+                return;
+            }
+        }
 
         if (noteedit::isFoldedAway (engine.getSong(), track)) // a thin row of a folded group: only its menu
         {
@@ -3349,6 +3518,28 @@ void PlaylistComponent::mouseDrag (const juce::MouseEvent& e)
 {
     if (drag == Drag::perfLaunch)
         return; // (a launch: nothing moves)
+
+    if (drag == Drag::blbVolume && blbControlTrack > 0)
+    {
+        const float sliderX = 8.0f;
+        const float sliderW = (float) headerWidth - 46.0f;
+        const float norm = juce::jlimit (0.0f, 1.0f, (e.position.x - sliderX) / juce::jmax (1.0f, sliderW));
+        engine.editSong ([ins = blbControlTrack, norm] (Song& s) {
+            if (ins < (int) s.mixer.size())
+                s.mixer[(std::size_t) ins].volume = norm;
+        }, false);
+        return;
+    }
+    if (drag == Drag::blbPan && blbControlTrack > 0)
+    {
+        const float delta = (float) (e.x - blbStartX) / 50.0f;
+        const float newPan = juce::jlimit (-1.0f, 1.0f, blbStartValue + delta);
+        engine.editSong ([ins = blbControlTrack, newPan] (Song& s) {
+            if (ins < (int) s.mixer.size())
+                s.mixer[(std::size_t) ins].pan = newPan;
+        }, false);
+        return;
+    }
 
     if (drag == Drag::trackZoom)
     {
@@ -6157,6 +6348,9 @@ PlaylistComponent::Hover PlaylistComponent::hoverAt (juce::Point<int> p) const
     if (! gridArea().contains (p))
         return h;
 
+    if (numTracks() == 0)
+        return h;
+
     h.track = yToTrack (p.y);
     bool rightEdge = false, leftEdge = false;
     h.clip = clipAt (p.x, p.y, rightEdge, leftEdge);
@@ -6238,6 +6432,8 @@ ui::Hint PlaylistComponent::hintAt (juce::Point<int> p)
     const auto& song = engine.getSong();
     const auto h = hoverAt (p);
     auto trackName = [&song] (int t) {
+        if (t < 0)
+            return juce::String();
         return t < (int) song.playlistTracks.size() && ! song.playlistTracks[(std::size_t) t].name.empty()
                    ? juce::String::fromUTF8 (song.playlistTracks[(std::size_t) t].name.c_str())
                    : tr ("Track {0}", { juce::String (t + 1) });
@@ -7411,4 +7607,82 @@ void PatternPicker::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWh
     scroll = juce::jlimit (0, juce::jmax (0, rows - visible), scroll - (int) std::round (wheel.deltaY * 6.0f));
     repaint();
 }
+
+juce::Rectangle<int> PlaylistComponent::addTrackButtonBounds() const
+{
+    return { 10, toolbarHeight + 6, headerWidth - 20, headerHeight - toolbarHeight - 12 };
+}
+
+void PlaylistComponent::showAddTrackMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, tr ("Voz / Audio"));
+    menu.addItem (2, tr ("Instrumento / Synth"));
+    menu.addItem (3, tr ("Caja de ritmos (Drum Machine)"));
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (addTrackButtonBounds())),
+                        [this] (int result) {
+                            if (result >= 1 && result <= 3)
+                                addBandLabTrack (result - 1);
+                        });
+}
+
+void PlaylistComponent::addBandLabTrack (int kind)
+{
+    const std::uint32_t palette[] = { 0xff00c4b4, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xffec4899, 0xff10b981 };
+    engine.editSong ([kind, &palette] (Song& s) {
+        const int trackIdx = (int) s.playlistTracks.size();
+        const int insertIdx = juce::jlimit (1, maxMixerTracks - 1, trackIdx + 1);
+        while ((int) s.mixer.size() <= insertIdx)
+        {
+            MixerTrack mt;
+            mt.name = "Insert " + std::to_string (s.mixer.size());
+            s.mixer.push_back (std::move (mt));
+        }
+
+        PlaylistTrack pt;
+        pt.colour = palette[(std::size_t) trackIdx % 6];
+        pt.mixerTrack = insertIdx;
+
+        if (kind == 0)
+        {
+            pt.mode = PlaylistTrackMode::audio;
+            pt.name = "Voz/Audio";
+            s.mixer[(std::size_t) insertIdx].name = "Voz/Audio " + std::to_string (trackIdx + 1);
+        }
+        else if (kind == 1)
+        {
+            pt.mode = PlaylistTrackMode::instrument;
+            pt.name = "Instrumento";
+            ChannelDef ch;
+            ch.name = "Instrumento " + std::to_string (trackIdx + 1);
+            ch.instrument = InstrumentKind::synth;
+            ch.mixerTrack = insertIdx;
+            ch.colour = pt.colour;
+            pt.channel = (int) s.channels.size();
+            s.channels.push_back (std::move (ch));
+            s.mixer[(std::size_t) insertIdx].name = pt.name;
+        }
+        else
+        {
+            pt.mode = PlaylistTrackMode::instrument;
+            pt.name = "Ritmos";
+            ChannelDef ch;
+            ch.name = "Ritmos " + std::to_string (trackIdx + 1);
+            ch.instrument = InstrumentKind::sampler;
+            ch.mixerTrack = insertIdx;
+            ch.colour = pt.colour;
+            pt.channel = (int) s.channels.size();
+            s.channels.push_back (std::move (ch));
+            s.mixer[(std::size_t) insertIdx].name = pt.name;
+        }
+
+        s.mixer[(std::size_t) insertIdx].colour = pt.colour;
+        s.playlistTracks.push_back (std::move (pt));
+    });
+    currentTrack = juce::jmax (0, numTracks() - 1);
+    refreshTrackLayout();
+    updateScrollBars();
+    repaint();
+}
+
 } // namespace lynx

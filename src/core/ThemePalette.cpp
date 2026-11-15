@@ -20,13 +20,13 @@ std::uint32_t rgb (int r, int g, int b)
 
 // The built-in palette (the values ui/Theme.h shipped with before themes existed).
 constexpr Palette builtIn {
-    0xff0e0f12, 0xff15161a, 0xff1b1d22, 0xff23262c, 0xff2c2f37, 0xff363a43, 0xff434852, // bg0..bg6
-    0xff2a2d34, 0xff3b3f48,                                                             // border, borderStrong
-    0xffeceef2, 0xffa1a6b0, 0xff60656f,                                                 // text
-    0xffe5383b, 0xfff2545a, 0xffc12a30, 0xff5c1f24, 0xffffffff, 0x2ee5383b,             // accent family
-    0xffc5c9d1, 0xff444955, 0xff2a2d34, 0xff4c3f46, 0xffe8a3a6,                         // knobs, steps (alt: stepOffAlt below)
-    0xff3a3e47, 0xff262930, 0xff1d1f24, 0xff17181c, 0xff1c1e23, 0xff16171b,             // grids, keys, rows
-    0xffb3545a, 0xffff6b6e, 0xff4a4e57, 0xff3a3e47                                      // notes, LED
+    0xff101114, 0xff17191e, 0xff1f2229, 0xff272b33, 0xff313640, 0xff3c424e, 0xff49505e, // bg0..bg6 (BandLab slate)
+    0xff2d313a, 0xff3f4552,                                                             // border, borderStrong
+    0xfff3f5f8, 0xffa6adbb, 0xff646b78,                                                 // text
+    0xfff12c33, 0xffff474e, 0xffc91e24, 0xff591c20, 0xffffffff, 0x2ef12c33,             // BandLab coral-red accent
+    0xffd0d5df, 0xff484f5c, 0xff2b2f38, 0xff4a3d44, 0xfff49ca0,                         // knobs, steps
+    0xff3b404b, 0xff272b33, 0xff1d2026, 0xff15171c, 0xff1e2128, 0xff17191e,             // grids, keys, rows
+    0xffc74b50, 0xffff5e64, 0xff4d5360, 0xff3b404b                                      // notes, LED
 };
 
 // A surface token for another background: the built-in step from bg1 to that token, applied to the new background
@@ -173,7 +173,7 @@ const std::vector<Spec>& builtInThemes()
             return s;
         };
         return std::vector<Spec> {
-            make ("LYNX", defaultAccent, defaultBackground), make ("Ocean", 0xff3d8bfd, 0xff12161d), make ("Emerald", 0xff2fbf71, 0xff131715),
+            make ("BandLab", defaultAccent, defaultBackground), make ("Ocean", 0xff3d8bfd, 0xff12161d), make ("Emerald", 0xff2fbf71, 0xff131715),
             make ("Amber", 0xfff0a020, 0xff17150f),          make ("Violet", 0xff9d6bff, 0xff16141c), make ("Graphite", 0xffd5d8de, 0xff141414),
         };
     }();
