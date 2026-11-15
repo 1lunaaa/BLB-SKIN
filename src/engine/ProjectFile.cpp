@@ -3034,7 +3034,7 @@ std::optional<Song> fromJson (const juce::String& json, juce::String& error, juc
                 const auto index = (std::size_t) (int) t[0];
                 const auto mixer = (int) t[2], channel = (int) t[3];
                 const auto audio = t[1].toString() == "audio";
-                if (audio ? (mixer <= 0 || mixer >= (int) song.mixer.size()) : (channel < 0 || channel >= (int) song.channels.size()))
+                if (audio ? (mixer <= 0 || mixer >= maxMixerTracks) : (channel < 0 || channel >= (int) song.channels.size()))
                     continue;
 
                 if (song.playlistTracks.size() <= index)
@@ -3042,7 +3042,7 @@ std::optional<Song> fromJson (const juce::String& json, juce::String& error, juc
 
                 auto& track = song.playlistTracks[index];
                 track.mode = audio ? PlaylistTrackMode::audio : PlaylistTrackMode::instrument;
-                track.mixerTrack = mixer > 0 && mixer < (int) song.mixer.size() ? mixer : -1;
+                track.mixerTrack = mixer > 0 && mixer < maxMixerTracks ? mixer : -1;
                 track.channel = audio ? -1 : channel;
             }
 
