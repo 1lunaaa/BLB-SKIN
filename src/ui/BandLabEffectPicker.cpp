@@ -15,10 +15,10 @@ using namespace theme;
 namespace
 {
 constexpr int blbPickerW = 640;
-constexpr int blbPickerH = 460;
+constexpr int blbPickerH = 540;
 constexpr int blbLeftW = 176;
-constexpr int blbCatTop = 58;
-constexpr int blbCatH = 32;
+constexpr int blbCatTop = 54;
+constexpr int blbCatH = 28;
 
 struct BlbCategoryDef
 {
@@ -185,7 +185,8 @@ BandLabEffectPicker::BandLabEffectPicker (AudioEngine& e, std::function<void (Ef
 {
     buildItems();
 
-    searchBox.setTextToShowWhenEmpty (blbUtf8 ("Buscar"), colour::textDisabled);
+    searchBox.setJustification (juce::Justification::centredLeft);
+    searchBox.setIndents (12, 0);
     searchBox.setColour (juce::TextEditor::backgroundColourId, colour::bg3);
     searchBox.setColour (juce::TextEditor::textColourId, colour::textPrimary);
     searchBox.setColour (juce::TextEditor::outlineColourId, colour::border);
@@ -289,7 +290,8 @@ void BandLabEffectPicker::refilter()
 
 juce::Rectangle<int> BandLabEffectPicker::categoryRect (int index) const
 {
-    return { 8, blbCatTop + index * blbCatH, blbLeftW - 16, blbCatH - 2 };
+    const int rowH = juce::jmax (16, juce::jmin (blbCatH, (getHeight() - blbCatTop - 8) / blbNumCategories));
+    return { 8, blbCatTop + index * rowH, blbLeftW - 16, rowH - 2 };
 }
 
 int BandLabEffectPicker::categoryAt (juce::Point<int> p) const
@@ -337,6 +339,15 @@ void BandLabEffectPicker::paint (juce::Graphics& g)
         g.drawText (blbUtf8 ("No hay efectos que coincidan."), blbLeftW + 18, 110, getWidth() - blbLeftW - 36, 24,
                     juce::Justification::centredLeft, false);
     }
+}
+
+void BandLabEffectPicker::paintOverChildren (juce::Graphics& g)
+{
+    if (searchBox.getText().isNotEmpty())
+        return;
+    g.setColour (colour::textDisabled);
+    g.setFont (font (type::body, false));
+    g.drawText (blbUtf8 ("Buscar efectos..."), searchBox.getBounds().withTrimmedLeft (14), juce::Justification::centredLeft, false);
 }
 
 void BandLabEffectPicker::resized()

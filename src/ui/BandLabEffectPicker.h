@@ -24,6 +24,7 @@ public:
     static void show (AudioEngine& engine, juce::Rectangle<int> screenArea, std::function<void (EffectSlot)> onPick);
 
     void paint (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
     void resized() override;
     void mouseMove (const juce::MouseEvent& e) override;
     void mouseDown (const juce::MouseEvent& e) override;
