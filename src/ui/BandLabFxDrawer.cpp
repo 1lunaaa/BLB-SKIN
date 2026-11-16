@@ -4,6 +4,8 @@
 #include "engine/PluginHost.h"
 #include "ui/Icons.h"
 #include "ui/MixerComponent.h"
+#include "ui/BandLabEffectPicker.h"
+#include "ui/PluginPicker.h"
 
 namespace lynx
 {
@@ -494,6 +496,29 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
                     juce::Justification::centred, false);
     }
 
+    // BLB: tarjeta "VST" (plugins externos) junto a "Anadir efecto": abre el picker de plugins de LYNX
+    {
+        const auto vstCard = vstCardBounds().toFloat();
+        if (vstCard.getRight() < (float) getWidth() - 144.0f)
+        {
+            fillRoundRect (g, vstCard, radius::md, hoverVst ? colour::bg3 : colour::bg2);
+            g.setColour (colour::borderStrong);
+            g.drawRoundedRectangle (vstCard.reduced (0.5f), radius::md, 1.0f);
+
+            const auto vc = vstCard.getCentre();
+            g.setColour (colour::textPrimary);
+            g.setFont (font (20.0f, true));
+            g.drawText ("VST", juce::Rectangle<int> ((int) vc.x - 30, (int) vc.y - 28, 60, 26), juce::Justification::centred, false);
+            g.setFont (font (type::caption, true));
+            g.drawText (juce::String::fromUTF8 ("Plugins externos"), juce::Rectangle<int> ((int) vstCard.getX() + 6, (int) vc.y, (int) vstCard.getWidth() - 12, 16),
+                        juce::Justification::centred, false);
+            g.setColour (colour::textSecondary);
+            g.setFont (font (type::caption, false));
+            g.drawText (juce::String::fromUTF8 ("Elegir / administrar"), juce::Rectangle<int> ((int) vstCard.getX() + 6, (int) vc.y + 18, (int) vstCard.getWidth() - 12, 16),
+                        juce::Justification::centred, false);
+        }
+    }
+
     // Tira de Volumen vertical + Pan L/R a la derecha del panel
     const int rightX = getWidth() - 136;
     g.setColour (colour::border);
@@ -634,33 +659,53 @@ void BandLabFxDrawer::showInputChannelMenu()
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (inputChannelBoxBounds())));
 }
 
+juce::Rectangle<int> BandLabFxDrawer::vstCardBounds() const
+{
+    return addCardBounds().translated (146 + 10, 0); // al lado de "Anadir efecto" (cardW 146 + gap 10)
+}
+
+void BandLabFxDrawer::addEffectSlot (EffectSlot slot)
+{
+    int newIdx = -1;
+    engine.editSong ([this, &slot, &newIdx] (Song& s) {
+        if (s.mixer.empty())
+            s.mixer = Song::defaultMixer (0);
+        if (track >= 0 && track < (int) s.mixer.size() && (int) s.mixer[(std::size_t) track].effects.size() < maxEffectSlots)
+        {
+            s.mixer[(std::size_t) track].effects.push_back (std::move (slot));
+            newIdx = (int) s.mixer[(std::size_t) track].effects.size() - 1;
+        }
+    });
+    repaint();
+    if (newIdx >= 0 && onOpenSlotEditor)
+        onOpenSlotEditor (track, newIdx);
+}
+
+// BLB: el selector de efectos estilo BandLab (ui/BandLabEffectPicker) reemplaza al menu plano de efectos
 void BandLabFxDrawer::showAddEffectMenu()
 {
-    juce::PopupMenu menu;
-    for (const auto kind : addableEffects())
-    {
-        if (! addableEffectAvailable (kind))
-            continue;
-        menu.addItem (addableEffectName (kind), [this, kind] {
-            auto slot = newAddableEffect (kind, engine.getSong().bpm);
-            if (! slot.has_value())
-                return;
-            int newIdx = -1;
-            engine.editSong ([this, &slot, &newIdx] (Song& s) {
-                if (s.mixer.empty())
-                    s.mixer = Song::defaultMixer (0);
-                if (track >= 0 && track < (int) s.mixer.size() && (int) s.mixer[(std::size_t) track].effects.size() < maxEffectSlots)
-                {
-                    s.mixer[(std::size_t) track].effects.push_back (std::move (*slot));
-                    newIdx = (int) s.mixer[(std::size_t) track].effects.size() - 1;
-                }
-            });
-            repaint();
-            if (newIdx >= 0 && onOpenSlotEditor)
-                onOpenSlotEditor (track, newIdx);
-        });
-    }
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (addCardBounds())));
+    juce::Component::SafePointer<BandLabFxDrawer> safe (this);
+    BandLabEffectPicker::show (engine, localAreaToGlobal (addCardBounds()), [safe] (EffectSlot slot) {
+        if (safe != nullptr)
+            safe->addEffectSlot (std::move (slot));
+    });
+}
+
+// BLB: tarjeta "VST": abre el picker de plugins de LYNX (elegir un plugin externo, o administrarlos / escanear)
+void BandLabFxDrawer::showVstPicker()
+{
+    juce::Component::SafePointer<BandLabFxDrawer> safe (this);
+    showPluginPicker (engine, false, [safe] (PluginRef ref) {
+        if (safe == nullptr)
+            return;
+        EffectSlot slot;
+        slot.kind = EffectKind::plugin;
+        slot.enabled = true;
+        slot.mix = 1.0f;
+        slot.plugin.id = ref.id;
+        slot.plugin.name = ref.name;
+        safe->addEffectSlot (std::move (slot));
+    });
 }
 
 void BandLabFxDrawer::showSlotOptionsMenu (int slotIndex)
@@ -684,6 +729,7 @@ void BandLabFxDrawer::mouseMove (const juce::MouseEvent& e)
 {
     const int hs = slotCardAt (e.getPosition());
     const bool ha = addCardBounds().contains (e.getPosition());
+    const bool hv = vstCardBounds().contains (e.getPosition());
     const bool hc = closeBtnBounds().contains (e.getPosition());
     int hip = 0;
     if (mode == Mode::input)
@@ -692,10 +738,11 @@ void BandLabFxDrawer::mouseMove (const juce::MouseEvent& e)
         else if (inputChannelBoxBounds().contains (e.getPosition())) hip = 2;
         else if (monitorBtnBounds().contains (e.getPosition())) hip = 3;
     }
-    if (hs != hoverSlot || ha != hoverAdd || hc != hoverClose || hip != hoverInputPart)
+    if (hs != hoverSlot || ha != hoverAdd || hv != hoverVst || hc != hoverClose || hip != hoverInputPart)
     {
         hoverSlot = hs;
         hoverAdd = ha;
+        hoverVst = hv;
         hoverClose = hc;
         hoverInputPart = hip;
         repaint();
@@ -706,6 +753,7 @@ void BandLabFxDrawer::mouseExit (const juce::MouseEvent&)
 {
     hoverSlot = -1;
     hoverAdd = false;
+    hoverVst = false;
     hoverClose = false;
     hoverInputPart = 0;
     repaint();
@@ -764,6 +812,12 @@ void BandLabFxDrawer::mouseDown (const juce::MouseEvent& e)
     if (addCardBounds().contains (e.getPosition()))
     {
         showAddEffectMenu();
+        return;
+    }
+
+    if (vstCardBounds().contains (e.getPosition()))
+    {
+        showVstPicker();
         return;
     }
 

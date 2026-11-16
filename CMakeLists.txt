@@ -421,6 +421,7 @@ if(LYNX_BUILD_APP)
         src/ui/PlaylistComponent.cpp
     src/ui/BandLabSoundsDrawer.cpp
     src/ui/BandLabFxDrawer.cpp
+    src/ui/BandLabEffectPicker.cpp
         src/ui/PatternBlocksView.cpp
         src/ui/MixerComponent.cpp
         src/ui/QuickPick.cpp

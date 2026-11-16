@@ -55,12 +55,15 @@ private:
     std::vector<int> visibleEffectSlotIndices() const;
 
     void showAddEffectMenu();
+    void showVstPicker();
+    void addEffectSlot (EffectSlot slot);
     void showSlotOptionsMenu (int slotIndex);
     void showInputDeviceMenu();
     void showInputChannelMenu();
 
     int slotCardAt (juce::Point<int> p) const;
     juce::Rectangle<int> addCardBounds() const;
+    juce::Rectangle<int> vstCardBounds() const;
     juce::Rectangle<int> closeBtnBounds() const { return { 10, 8, 22, 22 }; }
 
     // Controles del panel Entrada (estilo BandLab)
@@ -79,6 +82,7 @@ private:
 
     int hoverSlot = -1;
     bool hoverAdd = false;
+    bool hoverVst = false;
     bool hoverClose = false;
     int hoverInputPart = 0; // 1=device, 2=channel, 3=monitor
 
