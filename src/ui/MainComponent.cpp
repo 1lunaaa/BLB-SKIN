@@ -806,11 +806,26 @@ void MainComponent::paint (juce::Graphics& g)
     for (int i = 0; i < 3; ++i)
         g.fillRoundedRectangle (menuR.getX() + 6.0f, menuR.getY() + 8.0f + (float) i * 5.0f, 16.0f, 1.8f, 0.9f);
 
-    g.setColour (colour::accent);
-    g.fillEllipse (46.0f, 12.0f, 14.0f, 14.0f);
+    // Isotipo BandLab: tres barras diagonales paralelas en rojo coral (#F12C18)
+    {
+        g.setColour (juce::Colour (0xfff12c18));
+        const float bx = 43.0f, by = 11.5f;
+        const float skew = 4.6f, h = 14.5f, w = 2.6f, gap = 4.3f;
+        for (int b = 0; b < 3; ++b)
+        {
+            const float x0 = bx + (float) b * gap;
+            juce::Path bar;
+            bar.startNewSubPath (x0 + skew, by);
+            bar.lineTo (x0 + skew + w, by);
+            bar.lineTo (x0 + w, by + h);
+            bar.lineTo (x0, by + h);
+            bar.closeSubPath();
+            g.fillPath (bar);
+        }
+    }
     g.setColour (colour::textPrimary);
     g.setFont (font (type::title, true));
-    g.drawText ("BandLab", 66, 7, 96, 24, juce::Justification::centredLeft, false);
+    g.drawText ("BandLab", 64, 7, 96, 24, juce::Justification::centredLeft, false);
 
     // Nombre del proyecto centrado en Fila 1
     const auto name = (engine.isModified() ? juce::String ("* ") : juce::String())

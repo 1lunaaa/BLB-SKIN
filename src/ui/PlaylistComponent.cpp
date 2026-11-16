@@ -735,7 +735,7 @@ bool PlaylistComponent::zoomRecent (double nowMs) const
 
 juce::Rectangle<int> PlaylistComponent::rulerArea() const
 {
-    return { headerWidth, rulerTop, gridArea().getWidth(), timelineHeight };
+    return { headerWidth, rulerTop, juce::jmax (0, gridArea().getWidth() - bandlabRightToolsBounds().getWidth()), timelineHeight };
 }
 
 PlaylistComponent::PlaylistComponent (AudioEngine& e)
@@ -1242,20 +1242,10 @@ void PlaylistComponent::setTitleBarInsets (int left, int right)
 
 void PlaylistComponent::resized()
 {
-    const auto h = toolbarHeight - 6;
-    arrangementBox.setBounds (4 + titleInsetLeft, 3, juce::jmin (150, getWidth() / 5), h);
-    tools.setBounds (arrangementBox.getRight() + 8, 3, tools.getIdealWidth (h), h);
-    snapBox.setBounds (tools.getRight() + 8, 3, 128, h);
-    followButton.setBounds (snapBox.getRight() + 6, 3, h, h);
-    stretchButton.setBounds (followButton.getRight() + 2, 3, h, h);
-    // beside the clip grid the Playlist is narrow: what would run under the panel's title buttons goes (the inset keeps
-    // 4 px of air before them). Anywhere else the toolbar stays exactly as it was.
-    const auto toolbarEnd = getWidth() - titleInsetRight + 4;
-    if (toolbarFitsNarrow && tools.getRight() > toolbarEnd)
-        tools.setSize (juce::jmax (0, toolbarEnd - tools.getX()), h);
-    for (auto* c : std::initializer_list<juce::Component*> { &snapBox, &followButton, &stretchButton })
-        c->setVisible (! toolbarFitsNarrow || c->getRight() <= toolbarEnd);
-    overview.setBounds (headerWidth, toolbarHeight, getWidth() - headerWidth - scrollBarSize, overviewHeight);
+    for (auto* c : std::initializer_list<juce::Component*> { &arrangementBox, &tools, &snapBox, &followButton, &stretchButton })
+        c->setVisible (false);
+    overview.setVisible (false);
+    overview.setBounds (0, 0, 0, 0);
     const auto blocks = blocksSectionHeight();
     blocksShown = blocks > 0;
     vBar.setBounds (getWidth() - scrollBarSize, tracksTop(), scrollBarSize, getHeight() - tracksTop() - blocks);
@@ -1323,6 +1313,8 @@ void PlaylistComponent::paint (juce::Graphics& g)
         const uitrace::Scope traceGrid ("Playlist lanes+clips", false);
         juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (grid);
+        g.setColour (juce::Colour (0xff08090b));
+        g.fillRect (grid);
         const auto paintedRows = g.getClipBounds();
 
         for (int t = 0; t < tracks; ++t)
@@ -1343,22 +1335,55 @@ void PlaylistComponent::paint (juce::Graphics& g)
             g.drawHorizontalLine (y + trackHeight - 1, (float) grid.getX(), (float) grid.getRight());
         }
 
-        if (tracks == 0)
+        if (song.playlist.empty())
         {
-            const auto dropBox = grid.reduced (28, 32).withHeight (juce::jmin (140, juce::jmax (80, grid.getHeight() - 64))).toFloat();
-            if (dropBox.getWidth() > 80.0f && dropBox.getHeight() > 40.0f)
+            const int tracksBottom = tracks > 0 ? trackToY (tracks) : grid.getY();
+            const int topY = juce::jmax (grid.getY() + 12, tracksBottom + 12);
+            const int availH = grid.getBottom() - topY - 12;
+            const auto dropBox = juce::Rectangle<float> (
+                (float) (grid.getX() + 12),
+                (float) topY,
+                (float) juce::jmax (0, grid.getWidth() - 24),
+                (float) juce::jmin (64, juce::jmax (0, availH)));
+
+            if (dropBox.getWidth() > 120.0f && dropBox.getHeight() > 46.0f)
             {
+                g.setColour (juce::Colour (0xff0d0f12).withAlpha (0.72f));
+                g.fillRoundedRectangle (dropBox, 6.0f);
+
                 juce::Path boxPath;
-                boxPath.addRoundedRectangle (dropBox, 10.0f);
+                boxPath.addRoundedRectangle (dropBox, 6.0f);
                 juce::Path dashed;
-                const float dashes[] = { 6.0f, 5.0f };
-                juce::PathStrokeType (1.5f).createDashedStroke (dashed, boxPath, dashes, 2);
-                g.setColour (colour::borderStrong);
+                const float dashes[] = { 7.0f, 5.0f };
+                juce::PathStrokeType (1.3f).createDashedStroke (dashed, boxPath, dashes, 2);
+                g.setColour (colour::textSecondary.withAlpha (0.65f));
                 g.fillPath (dashed);
 
+                // Icono BandLab: doble corchea unida con signo "+" arriba a la izquierda
+                const float cx = dropBox.getCentreX();
+                const float cy = dropBox.getY() + 21.0f;
                 g.setColour (colour::textPrimary);
+
+                // Signo "+" a la izquierda de la primera plica
+                const float px = cx - 8.5f, py = cy - 5.5f;
+                g.drawLine (px - 2.6f, py, px + 2.6f, py, 1.4f);
+                g.drawLine (px, py - 2.6f, px, py + 2.6f, 1.4f);
+
+                // Dos cabezas de nota (circulos huecos/rellenos finos) + dos plicas + barra superior
+                const float x1 = cx - 2.0f, x2 = cx + 6.0f;
+                const float y1 = cy + 4.5f, y2 = cy + 3.0f;
+                g.drawEllipse (x1 - 4.2f, y1 - 2.0f, 4.4f, 3.6f, 1.4f);
+                g.drawEllipse (x2 - 4.2f, y2 - 2.0f, 4.4f, 3.6f, 1.4f);
+                g.drawLine (x1, y1, x1, cy - 6.0f, 1.4f);
+                g.drawLine (x2, y2, x2, cy - 7.5f, 1.4f);
+                g.drawLine (x1, cy - 6.0f, x2, cy - 7.5f, 1.8f);
+
+                // Texto debajo del icono
+                auto textArea = dropBox.toNearestInt();
+                textArea.setTop ((int) (dropBox.getY() + 33.0f));
                 g.setFont (font (type::body, true));
-                textcache::drawText (g, tr ("Suelta un bucle o un archivo audio/MIDI/video"), dropBox.toNearestInt(), juce::Justification::centred);
+                textcache::drawText (g, tr ("Suelta un bucle o un archivo audio/MIDI/video"),
+                                     textArea, juce::Justification::centredTop);
             }
         }
 
@@ -1366,19 +1391,23 @@ void PlaylistComponent::paint (juce::Graphics& g)
 
         // (only the bars of the repainted columns: a playhead strip is 16 px wide, the view can hold hundreds of bars,
         // and every line is a renderer call even where it is clipped away; round 174e)
-        const auto paintedX = grid.getIntersection (g.getClipBounds());
-        for (const auto& b : song.barsBetween (juce::jmax ((std::int64_t) std::max (0.0, scrollTicks), (std::int64_t) xToTick (paintedX.getX()) - bar),
-                                               juce::jmin ((std::int64_t) xToTick (grid.getRight()), (std::int64_t) xToTick (paintedX.getRight())) + 1))
+        if (tracks > 0)
         {
-            g.setColour (colour::gridBar);
-            g.drawVerticalLine ((int) tickToX ((double) b.tick), (float) grid.getY(), (float) grid.getBottom());
+            const float lanesBottom = (float) juce::jmin (grid.getBottom(), trackToY (tracks));
+            const auto paintedX = grid.getIntersection (g.getClipBounds());
+            for (const auto& b : song.barsBetween (juce::jmax ((std::int64_t) std::max (0.0, scrollTicks), (std::int64_t) xToTick (paintedX.getX()) - bar),
+                                                   juce::jmin ((std::int64_t) xToTick (grid.getRight()), (std::int64_t) xToTick (paintedX.getRight())) + 1))
+            {
+                g.setColour (colour::gridBar);
+                g.drawVerticalLine ((int) tickToX ((double) b.tick), (float) grid.getY(), lanesBottom);
 
-            if (beatPixels < 8.0)
-                continue; // zoomed far out: bar lines only
+                if (beatPixels < 8.0)
+                    continue; // zoomed far out: bar lines only
 
-            g.setColour (colour::gridBeat);
-            for (auto tick = b.tick + ppq; tick < b.tick + b.length; tick += ppq)
-                g.drawVerticalLine ((int) tickToX ((double) tick), (float) grid.getY(), (float) grid.getBottom());
+                g.setColour (colour::gridBeat);
+                for (auto tick = b.tick + ppq; tick < b.tick + b.length; tick += ppq)
+                    g.drawVerticalLine ((int) tickToX ((double) tick), (float) grid.getY(), lanesBottom);
+            }
         }
 
         // loop region
@@ -1941,7 +1970,7 @@ void PlaylistComponent::paint (juce::Graphics& g)
     g.fillRect (0, headerHeight - 1, headerWidth, 1);
     g.fillRect (headerWidth - 1, toolbarHeight, 1, getHeight() - toolbarHeight);
 
-    // BandLab "+ Añadir pista" dark pill button in top-left corner beside ruler
+    // BandLab "+ Añadir pista" dark pill button + 2 circular buttons (Automation & View)
     {
         const auto btn = addTrackButtonBounds().toFloat();
         theme::fillRoundRect (g, btn, btn.getHeight() * 0.5f, colour::bg4);
@@ -1950,6 +1979,98 @@ void PlaylistComponent::paint (juce::Graphics& g)
         g.setColour (colour::textPrimary);
         g.setFont (font (type::smallSize, true));
         textcache::drawText (g, tr ("+ Añadir pista"), btn.toNearestInt(), juce::Justification::centred);
+
+        auto drawCircleBtn = [&] (juce::Rectangle<int> rInt)
+        {
+            const auto r = rInt.toFloat();
+            g.setColour (colour::bg4);
+            g.fillEllipse (r);
+            g.setColour (colour::borderStrong);
+            g.drawEllipse (r.reduced (0.5f), 1.0f);
+            return r;
+        };
+
+        // 1. Boton circular de Automatizacion (linea diagonal con dos nodos)
+        {
+            const auto r = drawCircleBtn (bandlabAutomationButtonBounds());
+            const float cx = r.getCentreX(), cy = r.getCentreY();
+            const float x1 = cx - 4.2f, y1 = cy + 3.8f;
+            const float x2 = cx + 4.2f, y2 = cy - 3.8f;
+            g.setColour (colour::textPrimary);
+            g.drawLine (x1, y1, x2, y2, 1.4f);
+            g.setColour (colour::bg4);
+            g.fillEllipse (x1 - 2.3f, y1 - 2.3f, 4.6f, 4.6f);
+            g.fillEllipse (x2 - 2.3f, y2 - 2.3f, 4.6f, 4.6f);
+            g.setColour (colour::textPrimary);
+            g.drawEllipse (x1 - 2.3f, y1 - 2.3f, 4.6f, 4.6f, 1.3f);
+            g.drawEllipse (x2 - 2.3f, y2 - 2.3f, 4.6f, 4.6f, 1.3f);
+        }
+
+        // 2. Boton circular de Vista/Compactar pistas (dos lineas + flechas enfrentadas)
+        {
+            const auto r = drawCircleBtn (bandlabCompactViewButtonBounds());
+            const float cx = r.getCentreX(), cy = r.getCentreY();
+            g.setColour (colour::textPrimary);
+            // Lineas horizontales superior e inferior
+            g.drawLine (cx - 5.0f, cy - 5.0f, cx + 5.0f, cy - 5.0f, 1.3f);
+            g.drawLine (cx - 5.0f, cy + 5.0f, cx + 5.0f, cy + 5.0f, 1.3f);
+            // Flecha apuntando hacia abajo (arriba)
+            g.drawLine (cx, cy - 3.5f, cx, cy - 1.0f, 1.3f);
+            g.drawLine (cx - 2.2f, cy - 2.6f, cx, cy - 0.8f, 1.3f);
+            g.drawLine (cx + 2.2f, cy - 2.6f, cx, cy - 0.8f, 1.3f);
+            // Flecha apuntando hacia arriba (abajo)
+            g.drawLine (cx, cy + 3.5f, cx, cy + 1.0f, 1.3f);
+            g.drawLine (cx - 2.2f, cy + 2.6f, cx, cy + 0.8f, 1.3f);
+            g.drawLine (cx + 2.2f, cy + 2.6f, cx, cy + 0.8f, 1.3f);
+        }
+    }
+
+    // BandLab right-side ruler controls: Magnet (snap) + Zoom Out (-) + Zoom In (+)
+    {
+        using namespace theme;
+        const auto box = bandlabRightToolsBounds();
+        g.setColour (colour::bg2);
+        g.fillRect (box);
+        g.setColour (colour::border);
+        g.fillRect (box.getX(), box.getY(), 1, box.getHeight());
+        g.fillRect (box.getX(), box.getBottom() - 1, box.getWidth(), 1);
+
+        const bool snapActive = (snapBox.getSelectedId() != 2);
+        const auto snapR = bandlabSnapButtonBounds().toFloat().reduced (3.0f, 5.0f);
+        theme::fillRoundRect (g, snapR, theme::radius::sm, snapActive ? colour::bg4 : colour::bg3);
+        g.setColour (snapActive ? juce::Colour (0xff2c82ff) : colour::textSecondary);
+        {
+            // BandLab U-magnet icon (puntas arriba, curva abajo)
+            const float cx = snapR.getCentreX(), cy = snapR.getCentreY();
+            const float r = 4.0f, stroke = 2.0f;
+            juce::Path mag;
+            mag.startNewSubPath (cx - r, cy - 3.5f);
+            mag.lineTo (cx - r, cy + 0.5f);
+            mag.addCentredArc (cx, cy + 0.5f, r, r, 0.0f,
+                               juce::MathConstants<float>::pi * 1.5f,
+                               juce::MathConstants<float>::pi * 0.5f, false);
+            mag.lineTo (cx + r, cy - 3.5f);
+            g.strokePath (mag, juce::PathStrokeType (stroke, juce::PathStrokeType::mitered, juce::PathStrokeType::butt));
+            // Polos superiores del imán
+            g.setColour (snapActive ? juce::Colours::white : colour::textPrimary);
+            g.fillRect (cx - r - stroke * 0.5f, cy - 5.2f, stroke, 2.0f);
+            g.fillRect (cx + r - stroke * 0.5f, cy - 5.2f, stroke, 2.0f);
+        }
+
+        auto drawMagnifier = [&] (juce::Rectangle<int> rInt, bool isPlus)
+        {
+            const auto r = rInt.toFloat().reduced (3.0f, 5.0f);
+            theme::fillRoundRect (g, r, theme::radius::sm, colour::bg3);
+            g.setColour (colour::textSecondary);
+            const float cx = r.getCentreX() - 1.0f, cy = r.getCentreY() - 1.0f;
+            g.drawEllipse (cx - 4.2f, cy - 4.2f, 8.4f, 8.4f, 1.4f);
+            g.drawLine (cx + 3.0f, cy + 3.0f, cx + 6.2f, cy + 6.2f, 1.6f);
+            g.drawLine (cx - 2.2f, cy, cx + 2.2f, cy, 1.4f);
+            if (isPlus)
+                g.drawLine (cx, cy - 2.2f, cx, cy + 2.2f, 1.4f);
+        };
+        drawMagnifier (bandlabZoomOutButtonBounds(), false);
+        drawMagnifier (bandlabZoomInButtonBounds(), true);
     }
 
     // the vertical zoom handle above the scroll bar (FL's track height control): a grip of three lines
@@ -2809,6 +2930,47 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
     if (addTrackButtonBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
     {
         showAddTrackMenu();
+        return;
+    }
+
+    // BandLab right-side Magnet (snap) & Zoom (- / +) buttons
+    if (bandlabSnapButtonBounds().contains (e.getPosition()))
+    {
+        if (flmods::popup (e.mods))
+        {
+            juce::PopupMenu menu;
+            const int currentId = snapBox.getSelectedId();
+            for (int i = 0; i < snapBox.getNumItems(); ++i)
+            {
+                const int itemId = snapBox.getItemId (i);
+                menu.addItem (itemId, snapBox.getItemText (i), true, itemId == currentId);
+            }
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (bandlabSnapButtonBounds())),
+                                [safe = juce::Component::SafePointer<PlaylistComponent> (this)] (int chosen)
+                                {
+                                    if (safe != nullptr && chosen > 0)
+                                    {
+                                        safe->snapBox.setSelectedId (chosen, juce::sendNotificationSync);
+                                        safe->repaint();
+                                    }
+                                });
+        }
+        else
+        {
+            const int cur = snapBox.getSelectedId();
+            snapBox.setSelectedId (cur == 2 ? 1 : 2, juce::sendNotificationSync);
+            repaint();
+        }
+        return;
+    }
+    if (bandlabZoomOutButtonBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
+    {
+        zoomOut (gridArea().getCentreX());
+        return;
+    }
+    if (bandlabZoomInButtonBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
+    {
+        zoomIn (gridArea().getCentreX());
         return;
     }
 
@@ -7667,7 +7829,51 @@ void PatternPicker::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWh
 
 juce::Rectangle<int> PlaylistComponent::addTrackButtonBounds() const
 {
-    return { 10, toolbarHeight + 6, headerWidth - 20, headerHeight - toolbarHeight - 12 };
+    const int h = headerHeight - toolbarHeight - 12;
+    const int gap = 6;
+    const int circlesW = h * 2 + gap * 2;
+    return { 10, toolbarHeight + 6, juce::jmax (96, headerWidth - 20 - circlesW), h };
+}
+
+juce::Rectangle<int> PlaylistComponent::bandlabAutomationButtonBounds() const
+{
+    const auto add = addTrackButtonBounds();
+    const int d = add.getHeight();
+    return { add.getRight() + 8, add.getY(), d, d };
+}
+
+juce::Rectangle<int> PlaylistComponent::bandlabCompactViewButtonBounds() const
+{
+    const auto autoBtn = bandlabAutomationButtonBounds();
+    const int d = autoBtn.getHeight();
+    return { autoBtn.getRight() + 6, autoBtn.getY(), d, d };
+}
+
+juce::Rectangle<int> PlaylistComponent::bandlabRightToolsBounds() const
+{
+    const int btnW = 30;
+    const int totalW = btnW * 3;
+    return { juce::jmax (headerWidth, getWidth() - scrollBarSize - totalW), toolbarHeight, totalW, headerHeight - toolbarHeight };
+}
+
+juce::Rectangle<int> PlaylistComponent::bandlabSnapButtonBounds() const
+{
+    auto b = bandlabRightToolsBounds();
+    return b.removeFromLeft (30);
+}
+
+juce::Rectangle<int> PlaylistComponent::bandlabZoomOutButtonBounds() const
+{
+    auto b = bandlabRightToolsBounds();
+    b.removeFromLeft (30);
+    return b.removeFromLeft (30);
+}
+
+juce::Rectangle<int> PlaylistComponent::bandlabZoomInButtonBounds() const
+{
+    auto b = bandlabRightToolsBounds();
+    b.removeFromLeft (60);
+    return b;
 }
 
 void PlaylistComponent::showAddTrackMenu()

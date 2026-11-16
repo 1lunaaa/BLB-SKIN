@@ -153,9 +153,9 @@ public:
     ui::Hint hoverForSnapshot();
 
     static constexpr int headerWidth = 240;
-    static constexpr int toolbarHeight = 32; // the panel title row (Workspace::titleHeight)
-    static constexpr int overviewHeight = 16; // the overview strip under the toolbar (round 90)
-    static constexpr int timelineHeight = 24;
+    static constexpr int toolbarHeight = 0; // BandLab clean top: no FL toolbar row
+    static constexpr int overviewHeight = 0;  // BandLab compact ruler without overview strip
+    static constexpr int timelineHeight = 32;
     static constexpr int rulerTop = toolbarHeight + overviewHeight;
     static constexpr int headerHeight = rulerTop + timelineHeight;
     static constexpr int trackHeight = 82; // BandLab-style track card height
@@ -189,6 +189,12 @@ private:
     enum class Drag { none, move, resize, trimLeft, slip, erase, seek, loop, select, fadeIn, fadeOut, paint, muting, knife, zoomRange, listen, pan, timeMove, timeShift, autoPoint, autoTension,
                       trackResize, preview, trackZoom, heightZoom, timeZoom, perfLaunch, clipGain, blbVolume, blbPan };
     juce::Rectangle<int> addTrackButtonBounds() const;
+    juce::Rectangle<int> bandlabAutomationButtonBounds() const;
+    juce::Rectangle<int> bandlabCompactViewButtonBounds() const;
+    juce::Rectangle<int> bandlabRightToolsBounds() const;
+    juce::Rectangle<int> bandlabSnapButtonBounds() const;
+    juce::Rectangle<int> bandlabZoomOutButtonBounds() const;
+    juce::Rectangle<int> bandlabZoomInButtonBounds() const;
     void showAddTrackMenu();
     void addBandLabTrack (int kind); // 0 = Voz/Audio, 1 = Instrumento, 2 = Drum Machine
     int blbControlTrack = -1;
@@ -559,6 +565,101 @@ private:
 };
 
 // The Playlist tab: the Picker on the left, Playlist, BandLab bottom dock and Sounds drawer.
+// ============================================================================
+// BandLabLyricsDrawer — Bloc de letras y notas guardado en song.info.comments
+// ============================================================================
+class BandLabLyricsDrawer final : public juce::Component
+{
+public:
+    std::function<void()> onClose;
+
+    explicit BandLabLyricsDrawer (AudioEngine& eng) : engine (eng)
+    {
+        editor.setMultiLine (true);
+        editor.setReturnKeyStartsNewLine (true);
+        editor.setScrollbarsShown (true);
+        editor.setCaretVisible (true);
+        editor.setPopupMenuEnabled (true);
+        editor.setFont (theme::font (14.0f, false));
+        editor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff12151a));
+        editor.setColour (juce::TextEditor::textColourId, theme::colour::textPrimary);
+        editor.setColour (juce::TextEditor::outlineColourId, theme::colour::border);
+        editor.setColour (juce::TextEditor::focusedOutlineColourId, theme::colour::borderStrong);
+        editor.setTextToShowWhenEmpty (tr ("Escribe la letra de tu canci\u00f3n o notas del proyecto..."),
+                                       theme::colour::textSecondary.withAlpha (0.55f));
+        editor.onTextChange = [this] {
+            if (syncing)
+                return;
+            const auto txt = editor.getText().toStdString();
+            engine.editSong ([&] (Song& s) { s.info.comments = txt; });
+            repaint (getLocalBounds().removeFromBottom (26));
+        };
+        addAndMakeVisible (editor);
+
+        closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
+        closeBtn.setWantsKeyboardFocus (false);
+        closeBtn.onClick = [this] { if (onClose) onClose(); };
+        addAndMakeVisible (closeBtn);
+    }
+
+    void refreshFromSong()
+    {
+        syncing = true;
+        const auto current = juce::String::fromUTF8 (engine.getSong().info.comments.c_str());
+        if (editor.getText() != current)
+            editor.setText (current, false);
+        syncing = false;
+        repaint();
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds();
+        auto hdr = b.removeFromTop (44);
+        closeBtn.setBounds (hdr.removeFromRight (38).reduced (6, 8));
+        b.removeFromBottom (26);
+        editor.setBounds (b.reduced (12, 8));
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto b = getLocalBounds();
+        g.setColour (juce::Colour (0xff0f1115));
+        g.fillRect (b);
+        g.setColour (theme::colour::border);
+        g.fillRect (b.getX(), b.getY(), 1, b.getHeight());
+
+        auto hdr = b.withHeight (44);
+        g.setColour (theme::colour::border);
+        g.fillRect (hdr.getX(), hdr.getBottom() - 1, hdr.getWidth(), 1);
+
+        // Icono pluma + titulo
+        const float ix = 20.0f, iy = 22.0f;
+        g.setColour (theme::colour::textPrimary);
+        juce::Path feather;
+        feather.startNewSubPath (ix - 4.0f, iy + 5.0f);
+        feather.quadraticTo (ix - 2.8f, iy - 4.5f, ix + 5.0f, iy - 5.0f);
+        feather.quadraticTo (ix + 3.8f, iy + 2.0f, ix - 4.0f, iy + 5.0f);
+        g.strokePath (feather, juce::PathStrokeType (1.4f));
+
+        g.setFont (theme::font (14.5f, true));
+        g.drawText (tr ("Letras / Notas"), 34, 10, hdr.getWidth() - 78, 24, juce::Justification::centredLeft, false);
+
+        auto ftr = b.withTop (b.getBottom() - 26);
+        g.setColour (theme::colour::textSecondary);
+        g.setFont (theme::font (theme::type::smallSize, false));
+        const int chars = editor.getText().length();
+        g.drawText (juce::String (chars) + tr (" caracteres  \u2022  Guardado en el proyecto"),
+                    ftr.reduced (12, 0), juce::Justification::centredLeft, false);
+    }
+
+private:
+    AudioEngine& engine;
+    juce::TextEditor editor;
+    juce::TextButton closeBtn;
+    bool syncing = false;
+};
+
 class PlaylistArea final : public juce::Component,
                            public SharesTitleBar,
                            private juce::ChangeListener
@@ -572,15 +673,17 @@ public:
     std::function<void (int track, int slot)> onOpenSlotEditor;
 
     PlaylistArea (PatternPicker& p, PlaylistComponent& l, AudioEngine& eng)
-        : engine (eng), picker (p), playlist (l), soundsDrawer (eng), fxDrawer (eng)
+        : engine (eng), picker (p), playlist (l), soundsDrawer (eng), lyricsDrawer (eng), fxDrawer (eng)
     {
         addAndMakeVisible (picker);
         addAndMakeVisible (playlist);
         addChildComponent (soundsDrawer);
+        addChildComponent (lyricsDrawer);
         addChildComponent (fxDrawer);
 
         soundsDrawer.onInsertSample = [this] (const juce::File& f) { playlist.addAudioClipAtPlayhead (f); };
         soundsDrawer.onClose = [this] { toggleSoundsDrawer (false); };
+        lyricsDrawer.onClose = [this] { toggleLyricsDrawer (false); };
 
         fxDrawer.onClose = [this] { toggleFxDrawer (false); };
         fxDrawer.onOpenSlotEditor = [this] (int t, int slot) {
@@ -598,43 +701,7 @@ public:
             toggleFxDrawer (true);
         };
 
-        for (auto* b : { &autoPitchTabButton, &fxTabButton, &editorTabButton, &soundsTabButton })
-        {
-            b->setClickingTogglesState (false);
-            b->setWantsKeyboardFocus (false);
-            addAndMakeVisible (*b);
-        }
-        autoPitchTabButton.setButtonText ("AutoPitch");
-        fxTabButton.setButtonText (tr ("Fx Efectos"));
-        editorTabButton.setButtonText (tr ("Editor"));
-        soundsTabButton.setButtonText (tr ("BandLab Sounds / Ritmos"));
-
-        autoPitchTabButton.onClick = [this] {
-            const int t = juce::jmax (1, playlist.getSelectedTrack() + 1);
-            fxDrawer.setTrack (t);
-            const bool alreadyInput = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input;
-            if (alreadyInput)
-                toggleFxDrawer (false);
-            else
-            {
-                fxDrawer.setMode (BandLabFxDrawer::Mode::input);
-                toggleFxDrawer (true);
-            }
-        };
-        fxTabButton.onClick = [this] {
-            const int t = juce::jmax (1, playlist.getSelectedTrack() + 1);
-            fxDrawer.setTrack (t);
-            const bool alreadyFx = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::effects;
-            if (alreadyFx)
-                toggleFxDrawer (false);
-            else
-            {
-                fxDrawer.setMode (BandLabFxDrawer::Mode::effects);
-                toggleFxDrawer (true);
-            }
-        };
-        editorTabButton.onClick = [this] { if (onOpenEditor) onOpenEditor(); };
-        soundsTabButton.onClick = [this] { toggleSoundsDrawer (! soundsOpen); };
+        // Footer estilo BandLab dibujado como capsulas agrupadas con iconos en paint()
         engine.addChangeListener (this);
         syncTrackDependentButtons();
     }
@@ -646,9 +713,9 @@ public:
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
-        const bool wasShown = fxTabButton.isVisible();
+        const bool wasShown = hadTracks;
         syncTrackDependentButtons();
-        if (wasShown != fxTabButton.isVisible())
+        if (wasShown != hadTracks)
         {
             resized();
             repaint();
@@ -657,15 +724,10 @@ public:
 
     void syncTrackDependentButtons()
     {
-        const bool hasTracks = ! engine.getSong().playlistTracks.empty();
-        autoPitchTabButton.setVisible (hasTracks);
-        fxTabButton.setVisible (hasTracks);
-        editorTabButton.setVisible (hasTracks);
-        if (! hasTracks && fxOpen)
+        hadTracks = ! engine.getSong().playlistTracks.empty();
+        if (! hadTracks && fxOpen)
         {
             fxOpen = false;
-            autoPitchTabButton.setToggleState (false, juce::dontSendNotification);
-            fxTabButton.setToggleState (false, juce::dontSendNotification);
             fxDrawer.setVisible (false);
         }
     }
@@ -673,7 +735,11 @@ public:
     void toggleSoundsDrawer (bool open)
     {
         soundsOpen = open;
-        soundsTabButton.setToggleState (soundsOpen, juce::dontSendNotification);
+        if (soundsOpen && lyricsOpen)
+        {
+            lyricsOpen = false;
+            lyricsDrawer.setVisible (false);
+        }
         soundsDrawer.setVisible (soundsOpen);
         if (soundsOpen)
             soundsDrawer.refreshPacks();
@@ -681,11 +747,24 @@ public:
         repaint();
     }
 
+    void toggleLyricsDrawer (bool open)
+    {
+        lyricsOpen = open;
+        if (lyricsOpen && soundsOpen)
+        {
+            soundsOpen = false;
+            soundsDrawer.setVisible (false);
+        }
+        lyricsDrawer.setVisible (lyricsOpen);
+        if (lyricsOpen)
+            lyricsDrawer.refreshFromSong();
+        resized();
+        repaint();
+    }
+
     void toggleFxDrawer (bool open)
     {
         fxOpen = open;
-        autoPitchTabButton.setToggleState (fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input, juce::dontSendNotification);
-        fxTabButton.setToggleState (fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::effects, juce::dontSendNotification);
         fxDrawer.setVisible (fxOpen);
         if (! fxOpen)
             fxDrawer.setMode (BandLabFxDrawer::Mode::effects);
@@ -730,26 +809,17 @@ public:
         syncTrackDependentButtons();
         auto area = getLocalBounds();
         auto bottomBar = area.removeFromBottom (bottomBarHeight);
-        const int pad = 5;
-        auto leftGroup = bottomBar.reduced (10, pad);
-        if (autoPitchTabButton.isVisible())
-        {
-            autoPitchTabButton.setBounds (leftGroup.removeFromLeft (108));
-            leftGroup.removeFromLeft (8);
-        }
-        if (fxTabButton.isVisible())
-        {
-            fxTabButton.setBounds (leftGroup.removeFromLeft (104));
-            leftGroup.removeFromLeft (8);
-        }
-        if (editorTabButton.isVisible())
-            editorTabButton.setBounds (leftGroup.removeFromLeft (96));
-        soundsTabButton.setBounds (leftGroup.removeFromRight (196));
+        updateFooterBounds (bottomBar);
 
         if (soundsOpen)
         {
             const auto top = titleLeft > 0 ? PlaylistComponent::toolbarHeight : 0;
             soundsDrawer.setBounds (area.removeFromRight (juce::jmin (soundsDrawerWidth, area.getWidth() / 2)).withTrimmedTop (top));
+        }
+        if (lyricsOpen)
+        {
+            const auto top = titleLeft > 0 ? PlaylistComponent::toolbarHeight : 0;
+            lyricsDrawer.setBounds (area.removeFromRight (juce::jmin (soundsDrawerWidth, area.getWidth() / 2)).withTrimmedTop (top));
         }
         if (fxOpen)
         {
@@ -790,22 +860,215 @@ public:
         g.setColour (theme::colour::border);
         g.fillRect (0, PlaylistComponent::toolbarHeight - 1, bandWidth, 1);
 
-        // BandLab bottom dock bar
+        // BandLab bottom dock bar (grouped dark capsules with icons)
         const auto bar = getLocalBounds().removeFromBottom (bottomBarHeight);
-        g.setColour (theme::colour::bg1);
+        g.setColour (juce::Colour (0xff0d0f12));
         g.fillRect (bar);
         g.setColour (theme::colour::border);
         g.fillRect (bar.getX(), bar.getY(), bar.getWidth(), 1);
+
+        auto drawPillContainer = [&] (juce::Rectangle<int> pill)
+        {
+            if (pill.isEmpty())
+                return;
+            const auto pf = pill.toFloat();
+            g.setColour (juce::Colour (0xff171a20));
+            g.fillRoundedRectangle (pf, pf.getHeight() * 0.5f);
+            g.setColour (theme::colour::border.withAlpha (0.85f));
+            g.drawRoundedRectangle (pf.reduced (0.5f), pf.getHeight() * 0.5f, 1.0f);
+        };
+
+        auto drawTab = [&] (int id, juce::Rectangle<int> r, const juce::String& label, bool active)
+        {
+            if (r.isEmpty())
+                return;
+            const bool hov = (hoveredFooterTab == id);
+            if (active || hov)
+            {
+                const auto rf = r.reduced (2, 2).toFloat();
+                g.setColour (active ? juce::Colour (0xff262b35) : juce::Colour (0xff1f242d));
+                g.fillRoundedRectangle (rf, rf.getHeight() * 0.5f);
+            }
+
+            const auto col = active ? theme::colour::textPrimary : theme::colour::textSecondary;
+            g.setColour (col);
+
+            const float ix = (float) r.getX() + 14.0f;
+            const float iy = (float) r.getCentreY();
+
+            if (id == 1) // AutoPitch (onda / diapason)
+            {
+                g.drawLine (ix - 3.5f, iy - 1.5f, ix - 3.5f, iy + 1.5f, 1.3f);
+                g.drawLine (ix - 1.0f, iy - 4.0f, ix - 1.0f, iy + 4.0f, 1.3f);
+                g.drawLine (ix + 1.5f, iy - 2.5f, ix + 1.5f, iy + 2.5f, 1.3f);
+                g.drawLine (ix + 4.0f, iy - 1.0f, ix + 4.0f, iy + 1.0f, 1.3f);
+            }
+            else if (id == 2) // Fx Efectos
+            {
+                g.setFont (juce::Font (11.5f, juce::Font::italic | juce::Font::bold));
+                g.drawText ("fx", (int) (ix - 7.0f), (int) (iy - 7.0f), 16, 14, juce::Justification::centred, false);
+            }
+            else if (id == 3) // Editor (lapiz)
+            {
+                g.drawLine (ix - 3.5f, iy + 3.5f, ix + 3.5f, iy - 3.5f, 1.4f);
+                g.drawLine (ix - 4.0f, iy + 4.0f, ix - 2.0f, iy + 3.8f, 1.2f);
+            }
+            else if (id == 4) // Letras/notas (pluma)
+            {
+                juce::Path feather;
+                feather.startNewSubPath (ix - 3.5f, iy + 4.0f);
+                feather.quadraticTo (ix - 2.5f, iy - 3.5f, ix + 4.0f, iy - 4.0f);
+                feather.quadraticTo (ix + 3.0f, iy + 1.5f, ix - 3.5f, iy + 4.0f);
+                g.strokePath (feather, juce::PathStrokeType (1.25f));
+            }
+            else if (id == 5) // BandLab Sounds (corchea)
+            {
+                g.fillEllipse (ix - 3.5f, iy + 1.0f, 4.0f, 3.0f);
+                g.drawLine (ix + 0.2f, iy + 2.5f, ix + 0.2f, iy - 4.5f, 1.3f);
+                g.drawLine (ix + 0.2f, iy - 4.5f, ix + 3.5f, iy - 3.0f, 1.3f);
+            }
+            else if (id == 6) // Ritmos (circulo con onda)
+            {
+                g.drawEllipse (ix - 5.0f, iy - 5.0f, 10.0f, 10.0f, 1.2f);
+                g.drawLine (ix - 2.5f, iy, ix - 1.0f, iy - 2.2f, 1.2f);
+                g.drawLine (ix - 1.0f, iy - 2.2f, ix + 1.0f, iy + 2.2f, 1.2f);
+                g.drawLine (ix + 1.0f, iy + 2.2f, ix + 2.5f, iy, 1.2f);
+            }
+
+            g.setFont (theme::font (theme::type::smallSize, active));
+            g.drawText (label, r.withTrimmedLeft (24).withTrimmedRight (8), juce::Justification::centredLeft, false);
+        };
+
+        if (hadTracks)
+        {
+            drawPillContainer (leftPillBounds);
+            const bool apActive = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input;
+            const bool fxActive = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::effects;
+            drawTab (1, autoPitchBounds, tr ("AutoPitch™"), apActive);
+            drawTab (2, fxBounds, tr ("Fx Efectos"), fxActive);
+            drawTab (3, editorBounds, tr ("Editor"), false);
+        }
+
+        drawPillContainer (rightPillBounds);
+        drawTab (4, lyricsBounds, tr ("Letras/notas"), lyricsOpen);
+        drawTab (5, soundsBounds, tr ("BandLab Sounds"), soundsOpen);
+        drawTab (6, beatsBounds, tr ("Ritmos"), false);
+    }
+
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        const int hit = hitTestFooterTab (e.getPosition());
+        if (hit != hoveredFooterTab)
+        {
+            hoveredFooterTab = hit;
+            setMouseCursor (hit > 0 ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+            repaint (getLocalBounds().removeFromBottom (bottomBarHeight));
+        }
+    }
+
+    void mouseExit (const juce::MouseEvent&) override
+    {
+        if (hoveredFooterTab != 0)
+        {
+            hoveredFooterTab = 0;
+            setMouseCursor (juce::MouseCursor::NormalCursor);
+            repaint (getLocalBounds().removeFromBottom (bottomBarHeight));
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const int hit = hitTestFooterTab (e.getPosition());
+        if (hit == 1)
+        {
+            const int t = juce::jmax (1, playlist.getSelectedTrack() + 1);
+            fxDrawer.setTrack (t);
+            const bool alreadyInput = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input;
+            if (alreadyInput)
+                toggleFxDrawer (false);
+            else
+            {
+                fxDrawer.setMode (BandLabFxDrawer::Mode::input);
+                toggleFxDrawer (true);
+            }
+        }
+        else if (hit == 2)
+        {
+            const int t = juce::jmax (1, playlist.getSelectedTrack() + 1);
+            fxDrawer.setTrack (t);
+            const bool alreadyFx = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::effects;
+            if (alreadyFx)
+                toggleFxDrawer (false);
+            else
+            {
+                fxDrawer.setMode (BandLabFxDrawer::Mode::effects);
+                toggleFxDrawer (true);
+            }
+        }
+        else if (hit == 3)
+        {
+            if (onOpenEditor) onOpenEditor();
+        }
+        else if (hit == 4)
+        {
+            toggleLyricsDrawer (! lyricsOpen);
+        }
+        else if (hit == 5 || hit == 6)
+        {
+            toggleSoundsDrawer (! soundsOpen);
+        }
     }
 
 private:
+    void updateFooterBounds (juce::Rectangle<int> bottomBar)
+    {
+        auto row = bottomBar.reduced (10, 4);
+        if (hadTracks)
+        {
+            leftPillBounds = row.removeFromLeft (286);
+            auto l = leftPillBounds.reduced (2, 1);
+            autoPitchBounds = l.removeFromLeft (102);
+            fxBounds        = l.removeFromLeft (98);
+            editorBounds    = l;
+        }
+        else
+        {
+            leftPillBounds = autoPitchBounds = fxBounds = editorBounds = {};
+        }
+
+        rightPillBounds = row.removeFromRight (320);
+        auto r = rightPillBounds.reduced (2, 1);
+        lyricsBounds = r.removeFromLeft (106);
+        soundsBounds = r.removeFromLeft (134);
+        beatsBounds  = r;
+    }
+
+    int hitTestFooterTab (juce::Point<int> pt) const
+    {
+        if (hadTracks)
+        {
+            if (autoPitchBounds.contains (pt)) return 1;
+            if (fxBounds.contains (pt))        return 2;
+            if (editorBounds.contains (pt))    return 3;
+        }
+        if (lyricsBounds.contains (pt)) return 4;
+        if (soundsBounds.contains (pt)) return 5;
+        if (beatsBounds.contains (pt))  return 6;
+        return 0;
+    }
+
     AudioEngine& engine;
     PatternPicker& picker;
     PlaylistComponent& playlist;
     BandLabSoundsDrawer soundsDrawer;
+    BandLabLyricsDrawer lyricsDrawer;
     BandLabFxDrawer fxDrawer;
-    juce::TextButton autoPitchTabButton, fxTabButton, editorTabButton, soundsTabButton;
+    juce::Rectangle<int> leftPillBounds, autoPitchBounds, fxBounds, editorBounds;
+    juce::Rectangle<int> rightPillBounds, lyricsBounds, soundsBounds, beatsBounds;
+    int hoveredFooterTab = 0;
+    bool hadTracks = false;
     bool soundsOpen = false;
+    bool lyricsOpen = false;
     bool fxOpen = false;
     int titleLeft = 0;
     juce::Component* clipGrid = nullptr;
