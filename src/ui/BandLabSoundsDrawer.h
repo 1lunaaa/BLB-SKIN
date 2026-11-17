@@ -50,12 +50,17 @@ private:
     int rowAt (int y) const;
     int rowHeight (const Item& item) const { return item.depth == 0 ? 64 : 34; }
     void addFolderDialog();
+    void loadHiddenFolders();
+    void saveHiddenFolders() const;
+    void hideFolder (const juce::File& folder);
+    void unhideAllFolders();
 
     AudioEngine& engine;
     juce::TextEditor searchBox;
     std::unique_ptr<juce::FileChooser> chooser;
     std::vector<juce::File> rootFolders;
     std::set<juce::String> expandedPaths;
+    std::set<juce::String> hiddenPaths;
     std::vector<Item> rows;
     std::vector<int> rowTops;
     std::map<juce::String, juce::Image> coverCache;
