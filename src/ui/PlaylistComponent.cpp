@@ -1326,12 +1326,14 @@ void PlaylistComponent::paint (juce::Graphics& g)
                 continue;
             const uitrace::Part tally (uitrace::part::lanes);
 
-            auto lane = t % 2 == 0 ? colour::bg2 : colour::bg2.interpolatedWith (colour::bg1, 0.5f);
+            const auto tc = t < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) t].colour : 0u;
+            const auto laneAccent = tc != 0 ? juce::Colour (tc) : colour::audioClip;
+            auto lane = juce::Colour (0xff0b0d10).interpolatedWith (laneAccent, isTrackSelected (t) ? 0.14f : 0.08f);
             if (t == hover.track && drag == Drag::none)
-                lane = lane.interpolatedWith (colour::textPrimary, 0.025f); // the track under the mouse
+                lane = lane.interpolatedWith (colour::textPrimary, 0.02f);
             g.setColour (lane);
             g.fillRect (grid.getX(), y, grid.getWidth(), trackHeight);
-            g.setColour (colour::bg0);
+            g.setColour (juce::Colour (0xff161920));
             g.drawHorizontalLine (y + trackHeight - 1, (float) grid.getX(), (float) grid.getRight());
         }
 
@@ -1778,18 +1780,22 @@ void PlaylistComponent::paint (juce::Graphics& g)
                 const auto left = member ? (float) groupIndent : 2.0f;
                 const auto trackColour = colourOf (t);
                 const auto accentCol = trackColour != 0 ? juce::Colour (trackColour) : colour::audioClip;
-                auto plate = isTrackSelected (t) ? colour::bg3 : colour::bg2.brighter (0.04f);
+                const bool sel = isTrackSelected (t);
+                auto plate = sel ? juce::Colour (0xff191c22) : juce::Colour (0xff13151a);
                 if (hovered)
-                    plate = plate.brighter (0.06f);
-                const auto plateArea = juce::Rectangle<float> (left + 2.0f, (float) y + 2.0f, (float) headerWidth - 6.0f - left, (float) trackHeight - 4.0f);
+                    plate = plate.brighter (0.04f);
+                const auto plateArea = juce::Rectangle<float> (left - 2.0f, (float) y, (float) headerWidth - (left - 2.0f), (float) trackHeight);
                 g.setColour (plate);
-                g.fillRoundedRectangle (plateArea, radius::md);
-                g.setColour (isTrackSelected (t) ? accentCol.withAlpha (0.75f) : colour::border);
-                g.drawRoundedRectangle (plateArea.reduced (0.5f), radius::md, 1.0f);
+                g.fillRect (plateArea);
+                g.setColour (juce::Colour (0xff0a0b0e));
+                g.fillRect (plateArea.getX(), plateArea.getBottom() - 1.0f, plateArea.getWidth(), 1.0f);
 
-                // Barra de color vertical izquierda estilo BandLab
-                g.setColour (muted ? colour::textDisabled : accentCol);
-                g.fillRoundedRectangle (plateArea.withWidth (4.0f).reduced (0.0f, 4.0f), 2.0f);
+                // Barra vertical de color a la derecha cuando la pista esta seleccionada (estilo BandLab)
+                if (sel)
+                {
+                    g.setColour (muted ? colour::textDisabled : accentCol);
+                    g.fillRect (plateArea.getRight() - 4.0f, plateArea.getY(), 4.0f, plateArea.getHeight() - 1.0f);
+                }
 
                 auto textLeft = (int) left + 10;
                 auto textRight = (float) headerWidth - 19.0f;
@@ -1875,70 +1881,144 @@ void PlaylistComponent::paint (juce::Graphics& g)
                 // BandLab-style track card (when tall enough)
                 if (trackHeight >= 56)
                 {
-                    const auto card = plateArea.reduced (6.0f, 4.0f);
-                    const auto accentCol = trackColour != 0 ? juce::Colour (trackColour) : colour::audioClip;
+                    const auto card = plateArea.reduced (10.0f, 7.0f).withTrimmedRight (4.0f);
                     const auto insertIdx = t < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) t].mixerTrack : -1;
                     const bool hasMixer = insertIdx > 0 && insertIdx < (int) song.mixer.size();
                     const float vol = hasMixer ? song.mixer[(std::size_t) insertIdx].volume : unityFader;
                     const float pan = hasMixer ? song.mixer[(std::size_t) insertIdx].pan : 0.0f;
                     const bool soloed = hasMixer && song.mixer[(std::size_t) insertIdx].solo;
+                    const bool collapsed = t < (int) song.playlistTracks.size() && song.playlistTracks[(std::size_t) t].collapsed;
 
-                    // Top row: clickable mic icon + number + name on left, M and S buttons on right
-                    const bool micActive = hasMixer && (song.mixer[(std::size_t) insertIdx].inputChannel >= 0 || engine.isInsertArmed (insertIdx));
-                    const auto micBox = juce::Rectangle<float> ((float) textLeft, card.getY() + 2.0f, 16.0f, 16.0f);
-                    icons::draw (g, Icon::mic, micBox, micActive ? colour::warning : colour::textSecondary);
+                    // Top row: colored track icon (mic for audio, piano for instrument) + "01  Nombre" on left
+                    const auto trkMode = t < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) t].mode : PlaylistTrackMode::audio;
+                    const bool isInst = (trkMode == PlaylistTrackMode::instrument);
+                    const bool micActive = ! isInst && hasMixer && (song.mixer[(std::size_t) insertIdx].inputChannel >= 0 || engine.isInsertArmed (insertIdx));
+                    const auto micBox = juce::Rectangle<float> (card.getX(), card.getY() + 2.0f, 16.0f, 16.0f);
+                    const auto iconCol = muted ? colour::textDisabled : accentCol;
+                    if (isInst)
+                    {
+                        // Icono pianito BandLab (teclado con 3 teclas blancas y 2 negras)
+                        const auto kb = micBox.reduced (1.0f, 2.5f);
+                        g.setColour (iconCol);
+                        g.drawRoundedRectangle (kb, 1.8f, 1.35f);
+                        const float k1 = kb.getX() + kb.getWidth() * 0.34f;
+                        const float k2 = kb.getX() + kb.getWidth() * 0.67f;
+                        g.drawLine (k1, kb.getY() + 0.5f, k1, kb.getBottom() - 0.5f, 1.0f);
+                        g.drawLine (k2, kb.getY() + 0.5f, k2, kb.getBottom() - 0.5f, 1.0f);
+                        g.fillRect (k1 - 1.3f, kb.getY() + 0.5f, 2.6f, kb.getHeight() * 0.55f);
+                        g.fillRect (k2 - 1.3f, kb.getY() + 0.5f, 2.6f, kb.getHeight() * 0.55f);
+                    }
+                    else
+                    {
+                        icons::draw (g, Icon::mic, micBox, iconCol);
+                        if (micActive)
+                        {
+                            g.setColour (colour::record);
+                            g.fillEllipse (micBox.getRight() - 3.0f, micBox.getY(), 4.5f, 4.5f);
+                        }
+                    }
 
-                    const int titleX = textLeft + 18;
-                    const auto numStr = juce::String (t + 1).paddedLeft ('0', 2) + " ";
+                    // Controles derechos fila 1: [v] circular (18px), pildora [M|S] (42x18), y menu 3 puntos (14x18)
+                    const auto chevBox = juce::Rectangle<float> (card.getRight() - 18.0f, card.getY() + 1.0f, 18.0f, 18.0f);
+                    const auto msPill  = juce::Rectangle<float> (chevBox.getX() - 46.0f, card.getY() + 1.0f, 42.0f, 18.0f);
+                    const auto dotsBox = juce::Rectangle<float> (msPill.getX() - 16.0f, card.getY() + 1.0f, 14.0f, 18.0f);
+
+                    const float titleX = card.getX() + 22.0f;
+                    const auto numStr = juce::String (t + 1).paddedLeft ('0', 2) + "  ";
                     const auto titleStr = numStr + (custom ? juce::String::fromUTF8 (song.playlistTracks[(std::size_t) t].name.c_str())
                                                            : tr ("Pista {0}", { juce::String (t + 1) }));
                     g.setColour (muted ? colour::textDisabled : colour::textPrimary);
                     g.setFont (font (type::smallSize, true));
-                    textcache::drawFittedText (g, titleStr, titleX, (int) card.getY(),
-                                               juce::jmax (20, (int) card.getRight() - titleX - 48), 20,
+                    textcache::drawFittedText (g, titleStr, (int) titleX, (int) card.getY(),
+                                               juce::jmax (20, (int) (dotsBox.getX() - titleX - 4.0f)), 20,
                                                juce::Justification::centredLeft, 1, 0.85f);
 
-                    // M and S pill buttons
-                    const auto mBox = juce::Rectangle<float> (card.getRight() - 44.0f, card.getY() + 1.0f, 20.0f, 18.0f);
-                    const auto sBox = juce::Rectangle<float> (card.getRight() - 21.0f, card.getY() + 1.0f, 20.0f, 18.0f);
-                    theme::fillRoundRect (g, mBox, 4.0f, muted ? colour::accent : colour::bg4);
-                    g.setColour (muted ? colour::onAccent : colour::textSecondary);
+                    // Tres puntos verticales (menu de pista)
+                    g.setColour (colour::textSecondary);
+                    const float dx = dotsBox.getCentreX();
+                    const float dy = dotsBox.getCentreY();
+                    for (int d = -1; d <= 1; ++d)
+                        g.fillEllipse (dx - 1.1f, dy + (float) d * 4.0f - 1.1f, 2.2f, 2.2f);
+
+                    // Capsula unida M | S
+                    theme::fillRoundRect (g, msPill, 9.0f, juce::Colour (0xff23262e));
+                    const auto mHalf = msPill.withWidth (msPill.getWidth() * 0.5f);
+                    const auto sHalf = msPill.withTrimmedLeft (msPill.getWidth() * 0.5f);
+                    if (muted)
+                    {
+                        theme::fillRoundRect (g, mHalf.reduced (1.0f), 8.0f, colour::accent);
+                        g.setColour (colour::onAccent);
+                    }
+                    else
+                    {
+                        g.setColour (colour::textPrimary);
+                    }
                     g.setFont (font (type::caption, true));
-                    textcache::drawText (g, "M", mBox.toNearestInt(), juce::Justification::centred);
+                    textcache::drawText (g, "M", mHalf.toNearestInt(), juce::Justification::centred);
 
-                    theme::fillRoundRect (g, sBox, 4.0f, soloed ? colour::warning : colour::bg4);
-                    g.setColour (soloed ? colour::bg0 : colour::textSecondary);
-                    textcache::drawText (g, "S", sBox.toNearestInt(), juce::Justification::centred);
+                    if (soloed)
+                    {
+                        theme::fillRoundRect (g, sHalf.reduced (1.0f), 8.0f, colour::warning);
+                        g.setColour (colour::bg0);
+                    }
+                    else
+                    {
+                        g.setColour (colour::textPrimary);
+                    }
+                    textcache::drawText (g, "S", sHalf.toNearestInt(), juce::Justification::centred);
 
-                    // Middle row: "+ Fx" badge
-                    const auto fxBox = juce::Rectangle<float> ((float) textLeft, card.getY() + 23.0f, 38.0f, 17.0f);
-                    theme::fillRoundRect (g, fxBox, 4.0f, colour::bg4);
+                    g.setColour (juce::Colour (0xff13151a));
+                    g.fillRect (msPill.getCentreX() - 0.5f, msPill.getY() + 3.0f, 1.0f, msPill.getHeight() - 6.0f);
+
+                    // Boton circular desplegable (v)
+                    g.setColour (juce::Colour (0xff23262e));
+                    g.fillEllipse (chevBox);
+                    g.setColour (colour::textSecondary);
+                    juce::Path chev;
+                    const float ccx = chevBox.getCentreX(), ccy = chevBox.getCentreY();
+                    if (collapsed)
+                    {
+                        chev.startNewSubPath (ccx - 3.0f, ccy + 1.5f);
+                        chev.lineTo (ccx, ccy - 1.5f);
+                        chev.lineTo (ccx + 3.0f, ccy + 1.5f);
+                    }
+                    else
+                    {
+                        chev.startNewSubPath (ccx - 3.0f, ccy - 1.5f);
+                        chev.lineTo (ccx, ccy + 1.5f);
+                        chev.lineTo (ccx + 3.0f, ccy - 1.5f);
+                    }
+                    g.strokePath (chev, juce::PathStrokeType (1.4f));
+
+                    // Middle row: compact rounded "+ Fx" pill aligned left under mic icon (BandLab style)
+                    const auto fxBox = juce::Rectangle<float> (card.getX(), card.getY() + 20.0f, 35.0f, 15.5f);
+                    theme::fillRoundRect (g, fxBox, 7.75f, juce::Colour (0xff23262e));
                     g.setColour (colour::textPrimary);
-                    g.setFont (font (type::caption, true));
+                    g.setFont (font (10.5f, true));
                     textcache::drawText (g, "+ Fx", fxBox.toNearestInt(), juce::Justification::centred);
 
-                    // Bottom row: horizontal volume slider + circular white pan knob
-                    const float bottomY = card.getBottom() - 22.0f;
-                    const auto panArea = juce::Rectangle<float> (card.getRight() - 24.0f, bottomY - 1.0f, 22.0f, 22.0f);
-                    const auto sliderArea = juce::Rectangle<float> ((float) textLeft, bottomY + 7.0f,
-                                                                    juce::jmax (30.0f, panArea.getX() - (float) textLeft - 10.0f), 4.0f);
-                    theme::fillRoundRect (g, sliderArea, 2.0f, colour::bg0);
+                    // Bottom row: thin horizontal volume slider + circular white pan knob
+                    const float bottomY = juce::jmin (card.getBottom() - 18.0f, fxBox.getBottom() + 5.0f);
+                    const auto panArea = juce::Rectangle<float> (card.getRight() - 22.0f, bottomY - 2.0f, 20.0f, 20.0f);
+                    const auto sliderArea = juce::Rectangle<float> (card.getX(), bottomY + 7.0f,
+                                                                    juce::jmax (30.0f, panArea.getX() - card.getX() - 12.0f), 2.5f);
+                    theme::fillRoundRect (g, sliderArea, 1.25f, juce::Colour (0xff2c303a));
                     const float normVol = juce::jlimit (0.0f, 1.0f, vol);
-                    theme::fillRoundRect (g, sliderArea.withWidth (sliderArea.getWidth() * normVol), 2.0f, accentCol);
+                    theme::fillRoundRect (g, sliderArea.withWidth (sliderArea.getWidth() * normVol), 1.25f, muted ? colour::textDisabled : accentCol);
                     g.setColour (juce::Colours::white);
-                    g.fillEllipse (sliderArea.getX() + sliderArea.getWidth() * normVol - 4.5f, sliderArea.getCentreY() - 4.5f, 9.0f, 9.0f);
+                    g.fillEllipse (sliderArea.getX() + sliderArea.getWidth() * normVol - 4.0f, sliderArea.getCentreY() - 4.0f, 8.0f, 8.0f);
 
                     // White BandLab pan knob + L / R labels
-                    g.setColour (juce::Colour (0xffeef0f4));
-                    g.fillEllipse (panArea.reduced (2.0f));
+                    g.setColour (juce::Colour (0xfff2f4f8));
+                    g.fillEllipse (panArea.reduced (1.5f));
                     const float angle = pan * 2.2f;
                     const auto pc = panArea.getCentre();
-                    g.setColour (colour::bg0);
-                    g.drawLine (pc.x, pc.y, pc.x + std::sin (angle) * 6.5f, pc.y - std::cos (angle) * 6.5f, 1.8f);
-                    g.setColour (colour::textDisabled);
-                    g.setFont (font (9.0f, true));
-                    textcache::drawText (g, "L", juce::Rectangle<int> ((int) panArea.getX() - 6, (int) panArea.getBottom() - 8, 8, 9), juce::Justification::centred);
-                    textcache::drawText (g, "R", juce::Rectangle<int> ((int) panArea.getRight() - 2, (int) panArea.getBottom() - 8, 8, 9), juce::Justification::centred);
+                    g.setColour (juce::Colour (0xff13151a));
+                    g.drawLine (pc.x, pc.y, pc.x + std::sin (angle) * 6.5f, pc.y - std::cos (angle) * 6.5f, 1.6f);
+                    g.setColour (colour::textSecondary);
+                    g.setFont (font (8.5f, true));
+                    textcache::drawText (g, "L", juce::Rectangle<int> ((int) panArea.getX() - 6, (int) panArea.getBottom() - 7, 8, 9), juce::Justification::centred);
+                    textcache::drawText (g, "R", juce::Rectangle<int> ((int) panArea.getRight() - 2, (int) panArea.getBottom() - 7, 8, 9), juce::Justification::centred);
                 }
                 else
                 {
@@ -1955,6 +2035,72 @@ void PlaylistComponent::paint (juce::Graphics& g)
                 {
                     g.setColour (colour::accent);
                     g.fillRoundedRectangle (juce::Rectangle<float> (6.0f, (float) (y + trackHeight) - 2.0f, (float) headerWidth - 12.0f, 3.0f), 1.5f);
+                }
+            }
+
+            // Fila estetica "AutoMix [IA] 👑 >" debajo de los canales creados (estilo BandLab)
+            if (tracks > 0)
+            {
+                const int amY = trackToY (tracks);
+                const int amH = 34;
+                if (amY < headers.getBottom() && amY + amH > headers.getY())
+                {
+                    const auto amRect = juce::Rectangle<float> (0.0f, (float) amY, (float) headerWidth - 1.0f, (float) amH);
+                    g.setColour (juce::Colour (0xff13151a));
+                    g.fillRect (amRect);
+                    g.setColour (juce::Colour (0xff0a0b0e));
+                    g.fillRect (amRect.getX(), amRect.getBottom() - 1.0f, amRect.getWidth(), 1.0f);
+
+                    // Icono izquierdo: dos sliders horizontales + destello IA
+                    const float ix = 12.0f, iy = amRect.getCentreY();
+                    g.setColour (colour::textSecondary);
+                    g.drawLine (ix, iy - 3.0f, ix + 8.0f, iy - 3.0f, 1.2f);
+                    g.fillEllipse (ix + 5.0f, iy - 4.8f, 3.6f, 3.6f);
+                    g.drawLine (ix, iy + 3.0f, ix + 11.0f, iy + 3.0f, 1.2f);
+                    g.setColour (juce::Colour (0xff13151a));
+                    g.fillEllipse (ix + 2.0f, iy + 1.2f, 3.6f, 3.6f);
+                    g.setColour (colour::textSecondary);
+                    g.drawEllipse (ix + 2.0f, iy + 1.2f, 3.6f, 3.6f, 1.2f);
+                    // Estrellita de 4 puntas arriba a la derecha del icono
+                    const float sx = ix + 11.0f, sy = iy - 4.0f;
+                    g.drawLine (sx - 2.2f, sy, sx + 2.2f, sy, 1.1f);
+                    g.drawLine (sx, sy - 2.2f, sx, sy + 2.2f, 1.1f);
+
+                    // Texto "AutoMix"
+                    g.setColour (colour::textPrimary);
+                    g.setFont (font (12.0f, true));
+                    textcache::drawText (g, "AutoMix", juce::Rectangle<int> (30, amY, 56, amH), juce::Justification::centredLeft);
+
+                    // Badge azul "IA"
+                    const auto iaBadge = juce::Rectangle<float> (86.0f, amRect.getCentreY() - 8.0f, 20.0f, 16.0f);
+                    theme::fillRoundRect (g, iaBadge, 4.0f, juce::Colour (0xff3898ff));
+                    g.setColour (juce::Colours::white);
+                    g.setFont (font (10.0f, true));
+                    textcache::drawText (g, "IA", iaBadge.toNearestInt(), juce::Justification::centred);
+
+                    // Coronita dorada
+                    const float cx = iaBadge.getRight() + 7.0f, cy = amRect.getCentreY();
+                    g.setColour (juce::Colour (0xfff5a623));
+                    juce::Path crown;
+                    crown.startNewSubPath (cx, cy + 2.5f);
+                    crown.lineTo (cx, cy - 3.0f);
+                    crown.lineTo (cx + 3.0f, cy);
+                    crown.lineTo (cx + 5.5f, cy - 4.0f);
+                    crown.lineTo (cx + 8.0f, cy);
+                    crown.lineTo (cx + 11.0f, cy - 3.0f);
+                    crown.lineTo (cx + 11.0f, cy + 2.5f);
+                    crown.closeSubPath();
+                    g.strokePath (crown, juce::PathStrokeType (1.3f));
+                    g.drawLine (cx, cy + 4.5f, cx + 11.0f, cy + 4.5f, 1.3f);
+
+                    // Flecha ">" a la derecha
+                    const float rx = amRect.getRight() - 14.0f, ry = amRect.getCentreY();
+                    g.setColour (colour::textSecondary);
+                    juce::Path arrowR;
+                    arrowR.startNewSubPath (rx - 2.5f, ry - 4.0f);
+                    arrowR.lineTo (rx + 2.0f, ry);
+                    arrowR.lineTo (rx - 2.5f, ry + 4.0f);
+                    g.strokePath (arrowR, juce::PathStrokeType (1.4f));
                 }
             }
         }
@@ -3009,14 +3155,17 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
         const auto th = heightOf (track);
         if (th >= 56 && e.mods.isLeftButtonDown() && y <= e.y && e.y <= y + th)
         {
-            const auto card = juce::Rectangle<float> (2.0f, (float) y + 1.0f, (float) headerWidth - 4.0f, (float) th - 3.0f).reduced (6.0f, 4.0f);
-            const auto micBox = juce::Rectangle<float> (card.getX(), card.getY(), 22.0f, 20.0f);
-            const auto mBox = juce::Rectangle<float> (card.getRight() - 44.0f, card.getY() + 1.0f, 20.0f, 18.0f);
-            const auto sBox = juce::Rectangle<float> (card.getRight() - 21.0f, card.getY() + 1.0f, 20.0f, 18.0f);
-            const auto fxBox = juce::Rectangle<float> (card.getX(), card.getY() + 23.0f, 52.0f, 17.0f);
-            const float bottomY = card.getBottom() - 22.0f;
-            const auto panArea = juce::Rectangle<float> (card.getRight() - 24.0f, bottomY - 1.0f, 22.0f, 22.0f);
-            const auto sliderArea = juce::Rectangle<float> (card.getX(), bottomY, juce::jmax (30.0f, panArea.getX() - card.getX() - 8.0f), 20.0f);
+            const auto card = juce::Rectangle<float> (0.0f, (float) y, (float) headerWidth, (float) th).reduced (10.0f, 7.0f).withTrimmedRight (4.0f);
+            const auto micBox = juce::Rectangle<float> (card.getX(), card.getY(), 20.0f, 20.0f);
+            const auto chevBox = juce::Rectangle<float> (card.getRight() - 18.0f, card.getY() + 1.0f, 18.0f, 18.0f);
+            const auto msPill  = juce::Rectangle<float> (chevBox.getX() - 46.0f, card.getY() + 1.0f, 42.0f, 18.0f);
+            const auto dotsBox = juce::Rectangle<float> (msPill.getX() - 16.0f, card.getY() + 1.0f, 14.0f, 18.0f);
+            const auto mBox = msPill.withWidth (msPill.getWidth() * 0.5f);
+            const auto sBox = msPill.withTrimmedLeft (msPill.getWidth() * 0.5f);
+            const auto fxBox = juce::Rectangle<float> (card.getX(), card.getY() + 20.0f, 35.0f, 15.5f);
+            const float bottomY = juce::jmin (card.getBottom() - 18.0f, fxBox.getBottom() + 5.0f);
+            const auto panArea = juce::Rectangle<float> (card.getRight() - 22.0f, bottomY - 2.0f, 20.0f, 20.0f);
+            const auto sliderArea = juce::Rectangle<float> (card.getX(), bottomY - 2.0f, juce::jmax (30.0f, panArea.getX() - card.getX() - 12.0f), 20.0f);
 
             const auto& song = engine.getSong();
             const int insertIdx = track < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) track].mixerTrack : -1;
@@ -3027,12 +3176,22 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
                     onOpenTrackInput (track);
                 return;
             }
-            if (mBox.expanded (2.0f).contains (e.position))
+            if (dotsBox.expanded (3.0f).contains (e.position))
+            {
+                showTrackMenu (track);
+                return;
+            }
+            if (chevBox.expanded (2.0f).contains (e.position))
+            {
+                editTrack (track, [] (PlaylistTrack& t) { t.collapsed = ! t.collapsed; });
+                return;
+            }
+            if (mBox.expanded (1.5f).contains (e.position))
             {
                 editTrack (track, [] (PlaylistTrack& t) { t.muted = ! t.muted; });
                 return;
             }
-            if (sBox.expanded (2.0f).contains (e.position) && insertIdx > 0)
+            if (sBox.expanded (1.5f).contains (e.position) && insertIdx > 0)
             {
                 engine.editSong ([insertIdx] (Song& s) {
                     if (insertIdx < (int) s.mixer.size())
@@ -7891,7 +8050,7 @@ void PlaylistComponent::showAddTrackMenu()
 
 void PlaylistComponent::addBandLabTrack (int kind)
 {
-    const std::uint32_t palette[] = { 0xff00c4b4, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xffec4899, 0xff10b981 };
+    const std::uint32_t palette[] = { 0xffff6b1a, 0xff00c4b4, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xff10b981 };
     engine.editSong ([kind, &palette] (Song& s) {
         const int trackIdx = (int) s.playlistTracks.size();
         const int insertIdx = juce::jlimit (1, maxMixerTracks - 1, trackIdx + 1);

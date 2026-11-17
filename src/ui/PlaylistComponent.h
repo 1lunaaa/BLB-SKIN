@@ -152,7 +152,7 @@ public:
     // hovers the right edge of the first clip in view (grip, outline, menu button); returns its hint
     ui::Hint hoverForSnapshot();
 
-    static constexpr int headerWidth = 240;
+    static constexpr int headerWidth = 218;
     static constexpr int toolbarHeight = 0; // BandLab clean top: no FL toolbar row
     static constexpr int overviewHeight = 0;  // BandLab compact ruler without overview strip
     static constexpr int timelineHeight = 32;
