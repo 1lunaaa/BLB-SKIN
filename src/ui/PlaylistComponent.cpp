@@ -2878,10 +2878,7 @@ void PlaylistComponent::seekTo (int x, bool snapOn)
     const auto waits = engine.getTransport().playing.load() && engine.quantizeSongJumps.load() > 0;
     engine.jumpTo (tick);
     if (! waits)
-    {
         playheadTick = tick;
-        cacheValid = false;
-    }
     repaint();
 }
 
