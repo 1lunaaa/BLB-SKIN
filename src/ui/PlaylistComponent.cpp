@@ -3893,7 +3893,16 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
     auto c = makeBrushClip (yToTrack (e.y), snap (xToTick (e.x), snapOn));
 
     if (c.kind == ClipKind::pattern)
+    {
+        const auto& s = engine.getSong();
+        const bool hasInstrumentTrack = std::any_of (s.playlistTracks.begin(), s.playlistTracks.end(),
+                                                     [] (const auto& pt) { return pt.mode == PlaylistTrackMode::instrument; });
+        const bool hasInstrumentChannel = std::any_of (s.channels.begin(), s.channels.end(),
+                                                       [] (const auto& ch) { return ch.instrument != InstrumentKind::audioClip; });
+        if (! hasInstrumentTrack && ! hasInstrumentChannel)
+            return;
         brush = {};
+    }
     // a track locked to content places its own content (FL: the paint loop of FUN_00e5cd20 → FUN_01220fe0, round 168f)
     pltracks::applyLockToContent (engine.getSong(), c);
 
