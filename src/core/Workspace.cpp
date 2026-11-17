@@ -56,8 +56,9 @@ Layout Layout::makeDefault (int width, int height)
     };
 
     const auto browserWidth = std::clamp (w * 17 / 100, minWidth, 260);
-    l[Panel::browser] = state ({ 0, 0, browserWidth, h }, true);
-    l[Panel::playlist] = state ({ browserWidth, 0, w - browserWidth, h }, true);
+    l[Panel::browser] = state ({ 0, 0, browserWidth, h }, false);
+    l[Panel::playlist] = state ({ 0, 0, w, h }, true);
+    l[Panel::playlist].maximised = true;
 
     // The Channel Rack floats over the Playlist (FL's View › Arrange windows › Desktop (default): the Browser at the
     // left, the Playlist filling the rest, the rack a window above it; UI fits its size to the rows afterwards),
@@ -72,7 +73,7 @@ Layout Layout::makeDefault (int width, int height)
     const auto rackHeight = std::min (h - 2 * gap, std::max (240, h * 55 / 100));
     const auto rackTop = std::min (40, h / 10);
     const auto rackLeft = std::max (browserWidth + gap, std::min (browserWidth + playlistHeaderWidth, w - gap - rackWidth));
-    l[Panel::channelRack] = state ({ rackLeft, rackTop, rackWidth, std::min (rackHeight, h - rackTop - gap) }, true);
+    l[Panel::channelRack] = state ({ rackLeft, rackTop, rackWidth, std::min (rackHeight, h - rackTop - gap) }, false);
 
     // Hidden until called (F7, F9), with rects that tile when both are shown on a tall enough desktop: the
     // Mixer along the bottom, the Piano Roll above it. On a short desktop the Piano Roll keeps a usable height

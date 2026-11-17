@@ -10,8 +10,8 @@
 // text stays readable. With LYNX's default accent and background it gives exactly the built-in palette.
 namespace lynx::themes
 {
-constexpr std::uint32_t defaultAccent = 0xfff12c33;     // BandLab coral-red
-constexpr std::uint32_t defaultBackground = 0xff17191e; // BandLab dark slate (token bg1)
+constexpr std::uint32_t defaultAccent = 0xff8387a2;     // BandLab slate-blue accent
+constexpr std::uint32_t defaultBackground = 0xff010101; // BandLab pure black (token bg1)
 
 // Every themeable token of ui/Theme.h (ARGB).
 struct Palette
@@ -76,7 +76,7 @@ struct Spec
     std::string name = "BandLab";
     std::uint32_t accent = defaultAccent;
     std::uint32_t background = defaultBackground;
-    std::uint32_t workspace = 0;     // the workspace backdrop's colour; 0 = automatic (the theme's deepest surface)
+    std::uint32_t workspace = 0xff010101;     // the workspace backdrop's colour; 0 = automatic (the theme's deepest surface)
     std::string image;               // workspace image file (empty = none); a relative path is inside the Backgrounds
                                      // folder next to LYNX.exe (themeui::backgroundsFolder, issue #12)
     ImageFit fit = ImageFit::fill;
@@ -84,7 +84,7 @@ struct Spec
     float dim = 0.0f;                // 0..1: darkens the image towards the backdrop colour
     std::string startupSound;        // audio file played at start instead of LYNX's own sound (empty = LYNX's; issue #12)
 
-    bool isDefaultLook() const noexcept { return accent == defaultAccent && background == defaultBackground && workspace == 0 && image.empty(); }
+    bool isDefaultLook() const noexcept { return accent == defaultAccent && background == defaultBackground && (workspace == 0 || workspace == 0xff010101u) && image.empty(); }
     bool operator== (const Spec&) const = default;
 };
 

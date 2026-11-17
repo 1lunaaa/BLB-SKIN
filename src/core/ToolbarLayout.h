@@ -118,8 +118,8 @@ struct Entry
 struct Layout
 {
     std::vector<Entry> entries; // every group exactly once, in toolbar order
-    IconSize iconSize = IconSize::medium;
-    int uiScale = 100; // percent
+    IconSize iconSize = IconSize::small;
+    int uiScale = 125; // percent
     bool separators = true; // hairlines between the panels (FL's "Separators")
     bool visible = true;    // the whole toolbar (Ctrl+F11 hides it, as in FL)
 
@@ -128,6 +128,7 @@ struct Layout
         Layout l;
         for (auto g : defaultOrder())
             l.entries.push_back ({ g, g == Group::transport || g == Group::record || g == Group::windows || g == Group::output });
+        l.iconSize = IconSize::small;
         l.uiScale = 125;
         return l;
     }

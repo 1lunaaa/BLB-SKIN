@@ -456,7 +456,7 @@ std::unique_ptr<juce::Component> makeSetupWizardOverlay (AudioEngine& engine, st
 
 bool setupWizardDone()
 {
-    return setupFile().existsAsFile();
+    return true;
 }
 
 void markSetupWizardDone()

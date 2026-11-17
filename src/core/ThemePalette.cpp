@@ -20,13 +20,13 @@ std::uint32_t rgb (int r, int g, int b)
 
 // The built-in palette (the values ui/Theme.h shipped with before themes existed).
 constexpr Palette builtIn {
-    0xff101114, 0xff17191e, 0xff1f2229, 0xff272b33, 0xff313640, 0xff3c424e, 0xff49505e, // bg0..bg6 (BandLab slate)
-    0xff2d313a, 0xff3f4552,                                                             // border, borderStrong
+    0xff010101, 0xff010101, 0xff090b12, 0xff11141c, 0xff1b202b, 0xff262c39, 0xff333a49, // bg0..bg6 (BandLab pure black)
+    0xff171b23, 0xff292f3d,                                                             // border, borderStrong
     0xfff3f5f8, 0xffa6adbb, 0xff646b78,                                                 // text
-    0xfff12c33, 0xffff474e, 0xffc91e24, 0xff591c20, 0xffffffff, 0x2ef12c33,             // BandLab coral-red accent
-    0xffd0d5df, 0xff484f5c, 0xff2b2f38, 0xff4a3d44, 0xfff49ca0,                         // knobs, steps
-    0xff3b404b, 0xff272b33, 0xff1d2026, 0xff15171c, 0xff1e2128, 0xff17191e,             // grids, keys, rows
-    0xffc74b50, 0xffff5e64, 0xff4d5360, 0xff3b404b                                      // notes, LED
+    0xff8387a2, 0xff9498af, 0xff6b6f85, 0xff2d2f38, 0xffffffff, 0x2e8387a2,             // BandLab #8387A2 accent
+    0xffd0d5df, 0xff323947, 0xff151921, 0xff2c303a, 0xffc7c9d5,                         // knobs, steps
+    0xff252a36, 0xff11141c, 0xff070a0f, 0xff010101, 0xff080b11, 0xff010101,             // grids, keys, rows
+    0xff65687b, 0xffa4a7bb, 0xff4d5360, 0xff252a36                                      // notes, LED
 };
 
 // A surface token for another background: the built-in step from bg1 to that token, applied to the new background
@@ -173,7 +173,7 @@ const std::vector<Spec>& builtInThemes()
             return s;
         };
         return std::vector<Spec> {
-            make ("BandLab", defaultAccent, defaultBackground), make ("Ocean", 0xff3d8bfd, 0xff12161d), make ("Emerald", 0xff2fbf71, 0xff131715),
+            [] { Spec s; s.name = "BandLab"; s.accent = defaultAccent; s.background = defaultBackground; s.workspace = 0xff010101; return s; }(), make ("Ocean", 0xff3d8bfd, 0xff12161d), make ("Emerald", 0xff2fbf71, 0xff131715),
             make ("Amber", 0xfff0a020, 0xff17150f),          make ("Violet", 0xff9d6bff, 0xff16141c), make ("Graphite", 0xffd5d8de, 0xff141414),
         };
     }();
