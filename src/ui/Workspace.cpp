@@ -165,11 +165,14 @@ public:
     {
         using namespace theme;
         g.fillAll (colour::bg2);
-        auto strip = getLocalBounds().removeFromTop (Workspace::titleHeight);
-        g.setColour (colour::bg3);
-        g.fillRect (strip);
-        g.setColour (colour::border);
-        g.fillRect (strip.removeFromBottom (1));
+        if (panel != Workspace::Panel::playlist)
+        {
+            auto strip = getLocalBounds().removeFromTop (Workspace::titleHeight);
+            g.setColour (colour::bg3);
+            g.fillRect (strip);
+            g.setColour (colour::border);
+            g.fillRect (strip.removeFromBottom (1));
+        }
     }
 
     void paintOverChildren (juce::Graphics& g) override
@@ -215,9 +218,28 @@ public:
         const auto rightInset = getWidth() - (strip.getRight() - 4);
         juce::ignoreUnused (buttonsRight);
 
-        menuButton.setBounds (4, 3, menuSize, Workspace::titleHeight - 6);
         const auto labelWidth = titleWidth() - (accessory != nullptr ? accessoryWidth + 8 : 0);
-        titleLabel.setBounds (0, 0, labelWidth, Workspace::titleHeight - 1);
+        if (panel == Workspace::Panel::playlist)
+        {
+            menuButton.setVisible (false);
+            titleLabel.setVisible (false);
+            closeButton.setVisible (false);
+            maximiseButton.setVisible (false);
+            dockButton.setVisible (false);
+            menuButton.setBounds (0, 0, 0, 0);
+            titleLabel.setBounds (0, 0, 0, 0);
+            closeButton.setBounds (0, 0, 0, 0);
+            maximiseButton.setBounds (0, 0, 0, 0);
+            dockButton.setBounds (0, 0, 0, 0);
+        }
+        else
+        {
+            menuButton.setVisible (true);
+            titleLabel.setVisible (true);
+            closeButton.setVisible (true);
+            menuButton.setBounds (4, 3, menuSize, Workspace::titleHeight - 6);
+            titleLabel.setBounds (0, 0, labelWidth, Workspace::titleHeight - 1);
+        }
 
         if (accessory != nullptr)
             accessory->setBounds (labelWidth, 1, accessoryWidth, Workspace::titleHeight - 2);
@@ -268,6 +290,9 @@ public:
 
         // the editor itself (not one of its controls)
         const auto bare = e.eventComponent == content || dynamic_cast<SharesTitleBar*> (e.eventComponent) != nullptr;
+        const auto relContent = e.getEventRelativeTo (content);
+        if (relContent.x >= 218 && relContent.y >= 0)
+            return false;
         return bare && e.getEventRelativeTo (this).y < Workspace::titleHeight;
     }
 
