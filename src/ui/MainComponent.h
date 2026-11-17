@@ -213,6 +213,7 @@ private:
     void movePatternNow (int delta);
 
     // workflow P2 windows and menus
+    int resolveInstrumentInsert() const;
     void showQuickAdd();
     void addPanelMenuItems (Panel panel, juce::PopupMenu& menu); // a window's own items in its title-bar menu
     void showHistory();

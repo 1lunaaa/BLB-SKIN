@@ -1647,7 +1647,7 @@ void MainComponent::connectBrowser (BrowserComponent& b)
     b.onAddInstrument = [this] (ChannelDef c) {
         if (PatcherWindows::takeInstrumentFromBrowser (c)) // a Patcher's Add plugin › Browse plugin database (round 162)
             return;
-        rack.addChannel (std::move (c), true);
+        rack.addChannel (std::move (c), true, resolveInstrumentInsert());
         showPanel (Panel::channelRack);
     };
     b.onAddEffect = [this] (EffectSlot slot) {
@@ -2567,7 +2567,7 @@ void MainComponent::togglePluginPicker()
     targets.addInstrument = [safe] (ChannelDef c) {
         if (safe == nullptr)
             return;
-        safe->rack.addChannel (std::move (c), true);
+        safe->rack.addChannel (std::move (c), true, safe->resolveInstrumentInsert());
         safe->showPanel (Panel::channelRack);
     };
     targets.addEffect = [safe] (EffectSlot slot) {
@@ -2614,12 +2614,25 @@ void MainComponent::togglePluginPicker()
     pluginPickerView->grabKeyboardFocus();
 }
 
+int MainComponent::resolveInstrumentInsert() const
+{
+    const auto& song = engine.getSong();
+    const int plTrack = playlist.getSelectedTrack();
+    if (plTrack >= 0 && plTrack < (int) song.playlistTracks.size())
+    {
+        const int ins = song.playlistTracks[(std::size_t) plTrack].mixerTrack;
+        if (ins > 0 && ins < (int) song.mixer.size())
+            return ins;
+    }
+    return 1;
+}
+
 void MainComponent::showQuickAdd()
 {
     QuickAddTargets targets;
     targets.effectsFirst = workspace.getFocused() == Panel::mixer;
     targets.addInstrument = [this] (ChannelDef c) {
-        rack.addChannel (std::move (c), true);
+        rack.addChannel (std::move (c), true, resolveInstrumentInsert());
         showPanel (Panel::channelRack);
     };
     targets.addEffect = [this] (EffectSlot slot) {
