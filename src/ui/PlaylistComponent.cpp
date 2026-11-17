@@ -1252,7 +1252,7 @@ void PlaylistComponent::resized()
     const auto blocks = blocksSectionHeight();
     blocksShown = blocks > 0;
     vBar.setBounds (getWidth() - scrollBarSize, tracksTop(), scrollBarSize, getHeight() - tracksTop() - blocks);
-    hBar.setBounds (headerWidth + 6, getHeight() - blocks - 13, juce::jmax (0, getWidth() - headerWidth - scrollBarSize - 12), 9);
+    hBar.setBounds (headerWidth + 6, getHeight() - blocks - 15, juce::jmax (0, getWidth() - headerWidth - scrollBarSize - 12), 12);
     blocksView->setBounds (0, getHeight() - blocks, getWidth(), blocks);
     blocksView->setVisible (blocksShown);
     const auto video = videoSectionHeight();
