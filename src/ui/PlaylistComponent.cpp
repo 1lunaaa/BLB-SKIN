@@ -1221,7 +1221,7 @@ void PlaylistComponent::updateScrollBars()
     const auto& song = engine.getSong();
     const auto grid = gridArea();
     const auto bar = (double) ppq * song.beatsPerBar;
-    const auto total = juce::jmax ({ (double) song.songLength() + 16 * bar, 32.0 * bar, grid.getWidth() / pixelsPerTick });
+    const auto total = juce::jmax ((double) song.songLength() + 16 * bar, 32.0 * bar, (double) grid.getWidth() / pixelsPerTick);
 
     hBar.setRangeLimits (0.0, total, juce::dontSendNotification);
     hBar.setCurrentRange (scrollTicks, grid.getWidth() / pixelsPerTick, juce::dontSendNotification);
