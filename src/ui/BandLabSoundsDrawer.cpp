@@ -34,24 +34,78 @@ BandLabSoundsDrawer::~BandLabSoundsDrawer()
     engine.previewFile ({});
 }
 
-void BandLabSoundsDrawer::refreshPacks()
+void BandLabSoundsDrawer::loadHiddenFolders()
 {
-    rootFolders.clear();
-    const auto foldersFile = PluginHost::settingsFolder().getChildFile ("browser-folders.txt");
-    for (const auto& line : juce::StringArray::fromLines (foldersFile.loadFileAsString()))
+    hiddenPaths.clear();
+    const auto hiddenFile = PluginHost::settingsFolder().getChildFile ("hidden-browser-folders.txt");
+    for (const auto& line : juce::StringArray::fromLines (hiddenFile.loadFileAsString()))
     {
-        const juce::File dir (line.trim());
-        if (dir.isDirectory())
-            rootFolders.push_back (dir);
+        const auto trimmed = line.trim();
+        if (trimmed.isNotEmpty())
+            hiddenPaths.insert (trimmed);
+    }
+}
+
+void BandLabSoundsDrawer::saveHiddenFolders() const
+{
+    const auto hiddenFile = PluginHost::settingsFolder().getChildFile ("hidden-browser-folders.txt");
+    hiddenFile.getParentDirectory().createDirectory();
+    juce::StringArray lines;
+    for (const auto& p : hiddenPaths)
+        lines.add (p);
+    hiddenFile.replaceWithText (lines.joinIntoString ("\n"));
+}
+
+void BandLabSoundsDrawer::hideFolder (const juce::File& folder)
+{
+    const auto path = folder.getFullPathName();
+    if (path.isEmpty())
+        return;
+    hiddenPaths.insert (path);
+    expandedPaths.erase (path);
+    saveHiddenFolders();
+
+    const auto foldersFile = PluginHost::settingsFolder().getChildFile ("browser-folders.txt");
+    if (foldersFile.existsAsFile())
+    {
+        auto lines = juce::StringArray::fromLines (foldersFile.loadFileAsString());
+        lines.removeString (path, true);
+        foldersFile.replaceWithText (lines.joinIntoString ("\n"));
     }
 
-    const auto music = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
-    if (music.isDirectory())
-        rootFolders.push_back (music);
+    refreshPacks();
+}
 
-    const auto downloads = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Downloads");
-    if (downloads.isDirectory())
-        rootFolders.push_back (downloads);
+void BandLabSoundsDrawer::unhideAllFolders()
+{
+    hiddenPaths.clear();
+    saveHiddenFolders();
+    refreshPacks();
+}
+
+void BandLabSoundsDrawer::refreshPacks()
+{
+    loadHiddenFolders();
+    rootFolders.clear();
+    auto tryAddRoot = [this] (const juce::File& dir)
+    {
+        if (! dir.isDirectory())
+            return;
+        const auto path = dir.getFullPathName();
+        if (hiddenPaths.count (path) > 0)
+            return;
+        for (const auto& existing : rootFolders)
+            if (existing.getFullPathName() == path)
+                return;
+        rootFolders.push_back (dir);
+    };
+
+    const auto foldersFile = PluginHost::settingsFolder().getChildFile ("browser-folders.txt");
+    for (const auto& line : juce::StringArray::fromLines (foldersFile.loadFileAsString()))
+        tryAddRoot (juce::File (line.trim()));
+
+    tryAddRoot (juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+    tryAddRoot (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Downloads"));
 
     rebuildVisibleRows();
 }
@@ -155,7 +209,10 @@ void BandLabSoundsDrawer::appendFolderChildren (const juce::File& folder, int de
         if (f.getFileName().startsWith ("."))
             continue;
         if (entry.isDirectory())
-            subDirs.push_back (f);
+        {
+            if (hiddenPaths.count (f.getFullPathName()) == 0)
+                subDirs.push_back (f);
+        }
         else if (isSupportedMedia (f))
             mediaFiles.push_back (f);
     }
@@ -374,6 +431,26 @@ void BandLabSoundsDrawer::mouseDown (const juce::MouseEvent& e)
     }
 
     const int r = rowAt (e.y);
+    if (e.mods.isPopupMenu())
+    {
+        juce::PopupMenu menu;
+        if (r >= 0 && r < (int) rows.size() && rows[(std::size_t) r].isFolder)
+        {
+            const auto targetDir = rows[(std::size_t) r].file;
+            menu.addItem (tr ("Ocultar carpeta"), [this, targetDir] { hideFolder (targetDir); });
+        }
+        if (! hiddenPaths.empty())
+        {
+            if (menu.getNumItems() > 0)
+                menu.addSeparator();
+            menu.addItem (tr ("Mostrar carpetas ocultas") + " (" + juce::String ((int) hiddenPaths.size()) + ")",
+                          [this] { unhideAllFolders(); });
+        }
+        if (menu.getNumItems() > 0)
+            menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
+        return;
+    }
+
     if (r < 0 || r >= (int) rows.size())
         return;
 
@@ -446,7 +523,10 @@ void BandLabSoundsDrawer::addFolderDialog()
                               file.getParentDirectory().createDirectory();
                               auto lines = juce::StringArray::fromLines (file.loadFileAsString());
                               lines.removeEmptyStrings();
-                              lines.addIfNotAlreadyThere (dir.getFullPathName());
+                              const auto addedPath = dir.getFullPathName();
+hiddenPaths.erase (addedPath);
+saveHiddenFolders();
+lines.addIfNotAlreadyThere (addedPath);
                               file.replaceWithText (lines.joinIntoString ("\n"));
                               expandedPaths.insert (dir.getFullPathName());
                               refreshPacks();
