@@ -31,7 +31,7 @@ public:
     SplashScreen();
     ~SplashScreen() override;
 
-    static constexpr int width = 560, height = 340;
+    static constexpr int width = 520, height = 520;
     // seconds from the start of the process before it may close (round 121: counted from the process start, not from
     // when the card appeared — the window comes ~1 s sooner)
     static constexpr double minimumDuration = 2.1;
