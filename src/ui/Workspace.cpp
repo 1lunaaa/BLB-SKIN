@@ -164,19 +164,24 @@ public:
     void paint (juce::Graphics& g) override
     {
         using namespace theme;
-        g.fillAll (colour::bg2);
-        if (panel != Workspace::Panel::playlist)
+        if (panel == Workspace::Panel::playlist)
         {
-            auto strip = getLocalBounds().removeFromTop (Workspace::titleHeight);
-            g.setColour (colour::bg3);
-            g.fillRect (strip);
-            g.setColour (colour::border);
-            g.fillRect (strip.removeFromBottom (1));
+            g.fillAll (juce::Colour (0xff010101));
+            return;
         }
+        g.fillAll (colour::bg2);
+        auto strip = getLocalBounds().removeFromTop (Workspace::titleHeight);
+        g.setColour (colour::bg3);
+        g.fillRect (strip);
+        g.setColour (colour::border);
+        g.fillRect (strip.removeFromBottom (1));
     }
 
     void paintOverChildren (juce::Graphics& g) override
     {
+        if (panel == Workspace::Panel::playlist)
+            return;
+
         using namespace theme;
 
         if (focused) // the focused panel gets the accent along its title
