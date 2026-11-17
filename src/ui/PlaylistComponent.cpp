@@ -2878,7 +2878,10 @@ void PlaylistComponent::seekTo (int x, bool snapOn)
     const auto waits = engine.getTransport().playing.load() && engine.quantizeSongJumps.load() > 0;
     engine.jumpTo (tick);
     if (! waits)
+    {
         playheadTick = tick;
+        cacheValid = false;
+    }
     repaint();
 }
 
@@ -7337,6 +7340,8 @@ bool PlaylistComponent::liveFrame (double nowMs)
 
     // whenever it moved: the line is anti-aliased, so even a fraction of a pixel shows (zoomed out, a playhead crossing
     // a few pixels a second glides at the display's rate instead of stepping, as FL's does)
+    if (drag == Drag::seek)
+        tick = playheadTick;
     const auto moved = (tick < 0.0) != (playheadTick < 0.0) || std::abs ((tick - playheadTick) * pixelsPerTick) >= 0.002;
     if (moved && isShowing())
     {
