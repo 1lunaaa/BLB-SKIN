@@ -751,8 +751,11 @@ PlaylistComponent::PlaylistComponent (AudioEngine& e)
         addAndMakeVisible (bar);
     }
 
-    // the overview strip is the horizontal scroller (FL's Playlist has its preview bar on top)
-    hBar.setVisible (false);
+    // Barra horizontal estilo BandLab en la parte inferior de la grilla
+    hBar.setVisible (true);
+    hBar.setColour (juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
+    hBar.setColour (juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
+    hBar.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff5c6370));
     overview.paintContent = [this] (juce::Graphics& g, juce::Rectangle<float> area, double total) { paintOverview (g, area, total); };
     overview.onChange = [this] (double start, double length) {
         const auto width = (double) gridArea().getWidth();
@@ -1218,7 +1221,7 @@ void PlaylistComponent::updateScrollBars()
     const auto& song = engine.getSong();
     const auto grid = gridArea();
     const auto bar = (double) ppq * song.beatsPerBar;
-    const auto total = juce::jmax ((double) song.songLength() + 16 * bar, grid.getWidth() / pixelsPerTick);
+    const auto total = juce::jmax ({ (double) song.songLength() + 16 * bar, 32.0 * bar, grid.getWidth() / pixelsPerTick });
 
     hBar.setRangeLimits (0.0, total, juce::dontSendNotification);
     hBar.setCurrentRange (scrollTicks, grid.getWidth() / pixelsPerTick, juce::dontSendNotification);
@@ -1249,6 +1252,7 @@ void PlaylistComponent::resized()
     const auto blocks = blocksSectionHeight();
     blocksShown = blocks > 0;
     vBar.setBounds (getWidth() - scrollBarSize, tracksTop(), scrollBarSize, getHeight() - tracksTop() - blocks);
+    hBar.setBounds (headerWidth + 6, getHeight() - blocks - 13, juce::jmax (0, getWidth() - headerWidth - scrollBarSize - 12), 9);
     blocksView->setBounds (0, getHeight() - blocks, getWidth(), blocks);
     blocksView->setVisible (blocksShown);
     const auto video = videoSectionHeight();
