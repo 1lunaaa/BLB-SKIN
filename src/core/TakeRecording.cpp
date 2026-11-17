@@ -135,14 +135,14 @@ static int takeTrackPick (const Song& song, int insert, std::int64_t start, std:
         for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
         {
             const auto& pt = song.playlistTracks[(std::size_t) t];
-            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert && freeAt (t))
+            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack == insert)
                 return t;
         }
         // BLB: an audio track not linked to any insert yet (a voice track just created) takes the recording
         for (int t = 0; t < (int) song.playlistTracks.size(); ++t)
         {
             const auto& pt = song.playlistTracks[(std::size_t) t];
-            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack <= 0 && freeAt (t))
+            if (pt.mode == PlaylistTrackMode::audio && pt.mixerTrack <= 0)
                 return t;
         }
     }
@@ -230,6 +230,34 @@ void placeTakeClips (Song& song, const std::vector<TakeFile>& files, const std::
             for (const auto& part : parts)
                 from = std::min (from, part.start), to = std::max (to, part.start + part.length);
             const auto track = takeTrack (song, insert, from, to);
+            // Sobrescribir/recortar clips de audio previos en el mismo canal dentro del rango [from, to)
+            std::vector<Clip> updated;
+            updated.reserve (song.playlist.size() + parts.size());
+            for (auto& existing : song.playlist)
+            {
+                if (existing.track != track || existing.kind != ClipKind::audio || existing.end() <= from || existing.start >= to)
+                {
+                    updated.push_back (existing);
+                    continue;
+                }
+                const auto exStart = existing.start;
+                const auto exEnd = existing.end();
+                if (exStart < from)
+                {
+                    Clip left = existing;
+                    left.length = from - exStart;
+                    updated.push_back (left);
+                }
+                if (exEnd > to)
+                {
+                    Clip right = existing;
+                    right.offset += (to - exStart);
+                    right.start = to;
+                    right.length = exEnd - to;
+                    updated.push_back (right);
+                }
+            }
+            song.playlist = std::move (updated);
             for (const auto& part : parts)
                 add (part, track, false);
             linkTakeTrack (song, track, insert);

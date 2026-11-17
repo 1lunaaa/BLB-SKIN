@@ -3347,6 +3347,23 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // Agarrar y arrastrar la flecha roja del cabezal (o su linea vertical en espacio vacio de la grilla)
+    if (e.mods.isLeftButtonDown() && ! flmods::ctrl (e.mods) && ! e.mods.isShiftDown()
+        && playheadTick >= 0.0 && e.x >= headerWidth && std::abs ((double) e.x - tickToX (playheadTick)) <= 9.0)
+    {
+        bool rEdge = false, lEdge = false;
+        const bool onRulerHit = (e.y >= rulerTop - 4 && e.y < headerHeight);
+        const bool onEmptyGridLine = gridArea().contains (e.getPosition()) && clipAt (e.x, e.y, rEdge, lEdge) < 0;
+        if (onRulerHit || onEmptyGridLine)
+        {
+            const auto snapOn = ! e.mods.isAltDown();
+            drag = Drag::seek;
+            seekTo (e.x, snapOn);
+            EditorGlobals::get().seekMark = juce::jmax<std::int64_t> (0, snap (xToTick (e.x), snapOn));
+            return;
+        }
+    }
+
     // ruler, FL 2026's rules (core/RulerGestures.h, docs/analise/REA_rodada168t.md): click = position; Ctrl / Shift /
     // double-click drag, the Select tool or a right-drag = time selection; Ctrl+right-drag or the Zoom tool = zoom to
     // a range; Shift+drag moves the selection. On a Mac, FL's Ctrl is Cmd (or Control, which is not a right click here)
