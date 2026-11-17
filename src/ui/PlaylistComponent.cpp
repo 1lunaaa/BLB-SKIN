@@ -3897,9 +3897,7 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
         const auto& s = engine.getSong();
         const bool hasInstrumentTrack = std::any_of (s.playlistTracks.begin(), s.playlistTracks.end(),
                                                      [] (const auto& pt) { return pt.mode == PlaylistTrackMode::instrument; });
-        const bool hasInstrumentChannel = std::any_of (s.channels.begin(), s.channels.end(),
-                                                       [] (const auto& ch) { return ch.instrument != InstrumentKind::audioClip; });
-        if (! hasInstrumentTrack && ! hasInstrumentChannel)
+        if (! hasInstrumentTrack)
             return;
         brush = {};
     }
