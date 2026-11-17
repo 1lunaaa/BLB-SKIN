@@ -75,11 +75,10 @@ StartupOptions StartupOptions::load()
 
 std::shared_ptr<const SampleData> makeStartupSample()
 {
-    auto sound = startup::makeSound (48000.0);
     auto sample = std::make_shared<SampleData>();
-    sample->left = std::move (sound.left);
-    sample->right = std::move (sound.right);
-    sample->sampleRate = sound.sampleRate;
+    sample->left.assign (480, 0.0f);
+    sample->right.assign (480, 0.0f);
+    sample->sampleRate = 48000.0;
     return sample;
 }
 
