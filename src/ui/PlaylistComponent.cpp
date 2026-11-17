@@ -2115,8 +2115,9 @@ void PlaylistComponent::paint (juce::Graphics& g)
     g.fillRect (0, 0, getWidth(), toolbarHeight);
     g.setColour (colour::bg2);
     g.fillRect (0, toolbarHeight, headerWidth, headerHeight - toolbarHeight);
-    g.setColour (colour::border);
+    g.setColour (juce::Colour (0xff010101));
     g.fillRect (0, toolbarHeight - 1, getWidth(), 1);
+    g.setColour (colour::border);
     g.fillRect (0, headerHeight - 1, headerWidth, 1);
     g.fillRect (headerWidth - 1, toolbarHeight, 1, getHeight() - toolbarHeight);
 

@@ -798,7 +798,7 @@ void MainComponent::paint (juce::Graphics& g)
     const auto botRow = juce::Rectangle<int> (0, 38, getWidth(), 38);
     g.setColour (colour::bg1);
     g.fillRect (botRow);
-    g.setColour (colour::border);
+    g.setColour (juce::Colour (0xff010101));
     g.fillRect (0, 75, getWidth(), 1);
 
     // Icono hamburguesa (menu) + Logo BandLab a la izquierda de Fila 1
