@@ -11,6 +11,7 @@
 #include "ui/UiTrace.h"
 #include "core/LoadTrace.h"
 #include "ui/MainComponent.h"
+#include "ui/LogoData.h"
 #include "core/PlaylistOps.h"
 #include "core/Performance.h"
 
@@ -806,21 +807,13 @@ void MainComponent::paint (juce::Graphics& g)
     for (int i = 0; i < 3; ++i)
         g.fillRoundedRectangle (menuR.getX() + 6.0f, menuR.getY() + 8.0f + (float) i * 5.0f, 16.0f, 1.8f, 0.9f);
 
-    // Isotipo BandLab: tres barras diagonales paralelas en rojo coral (#F12C18)
+    // Isotipo BandLab incrustado en el espacio de trabajo
     {
-        g.setColour (juce::Colour (0xfff12c18));
-        const float bx = 43.0f, by = 11.5f;
-        const float skew = 4.6f, h = 14.5f, w = 2.6f, gap = 4.3f;
-        for (int b = 0; b < 3; ++b)
+        const auto wsLogo = juce::ImageCache::getFromMemory (logo::workspacePng, (int) sizeof (logo::workspacePng));
+        if (wsLogo.isValid())
         {
-            const float x0 = bx + (float) b * gap;
-            juce::Path bar;
-            bar.startNewSubPath (x0 + skew, by);
-            bar.lineTo (x0 + skew + w, by);
-            bar.lineTo (x0 + w, by + h);
-            bar.lineTo (x0, by + h);
-            bar.closeSubPath();
-            g.fillPath (bar);
+            g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+            g.drawImageWithin (wsLogo, 40, 8, 20, 22, juce::RectanglePlacement::centred);
         }
     }
     g.setColour (colour::textPrimary);
