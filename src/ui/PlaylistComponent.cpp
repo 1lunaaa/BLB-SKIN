@@ -7156,6 +7156,8 @@ void PlaylistComponent::filesDropped (const juce::StringArray& files, int x, int
                     ch.name = sampleName;
                     ch.mixerTrack = insertIdx;
                     ch.colour = pt.colour;
+                    ch.sampler = {};
+                    ch.sampler.cut = true;
                     chIdx = (int) s.channels.size();
                     s.channels.push_back (std::move (ch));
                     pt.channel = chIdx;
@@ -7168,6 +7170,8 @@ void PlaylistComponent::filesDropped (const juce::StringArray& files, int x, int
                     ch.name = sampleName;
                     ch.mixerTrack = insertIdx;
                     ch.colour = pt.colour;
+                    ch.sampler = {};
+                    ch.sampler.cut = true;
                 }
 
                 s.mixer[(std::size_t) insertIdx].name = sampleName;
