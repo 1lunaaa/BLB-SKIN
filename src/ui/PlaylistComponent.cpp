@@ -3293,55 +3293,35 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
             }
             else
                 selectedTracks = { track };
-                if (e.getNumberOfClicks() == 1 && track >= 0 && track < (int) engine.getSong().playlistTracks.size())
-                {
-                    const auto& s = engine.getSong();
-                    int insertIdx = s.playlistTracks[(std::size_t) track].mixerTrack;
-                    if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
-                    {
-                        insertIdx = juce::jlimit (1, std::max (1, (int) s.mixer.size() - 1), track + 1);
-                        engine.editSong ([track, insertIdx] (Song& song) {
-                            if (track < 0 || track >= (int) song.playlistTracks.size())
-                                return;
-                            song.playlistTracks[(std::size_t) track].mode = PlaylistTrackMode::audio;
-                            song.playlistTracks[(std::size_t) track].mixerTrack = insertIdx;
-                        });
-                    }
-                    for (int m = 1; m < (int) engine.getSong().mixer.size(); ++m)
-                    {
-                        if (m == insertIdx)
-                            continue;
-                        engine.setInsertInput (m, -1, false);
-                        engine.setInsertArmed (m, false);
-                    }
-                    engine.setInsertInput (insertIdx, 0, false);
-                    engine.setInsertArmed (insertIdx, true);
-                }
             currentTrack = track;
             if (track >= 0 && track < (int) engine.getSong().playlistTracks.size())
             {
                 const auto& s = engine.getSong();
-                int insertIdx = s.playlistTracks[(std::size_t) track].mixerTrack;
+                const auto& pt = s.playlistTracks[(std::size_t) track];
+                int insertIdx = pt.mixerTrack;
                 if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
                 {
                     insertIdx = juce::jlimit (1, std::max (1, (int) s.mixer.size() - 1), track + 1);
                     engine.editSong ([track, insertIdx] (Song& song) {
-                        song.playlistTracks[(std::size_t) track].mode = PlaylistTrackMode::audio;
-                        song.playlistTracks[(std::size_t) track].mixerTrack = insertIdx;
+                        if (track >= 0 && track < (int) song.playlistTracks.size())
+                            song.playlistTracks[(std::size_t) track].mixerTrack = insertIdx;
                     });
                 }
-                if (! engine.hasAudioInput())
-                    engine.openAudioInput();
                 for (int m = 1; m < (int) s.mixer.size(); ++m)
                 {
-                    if (m == insertIdx)
+                    if (pt.mode == PlaylistTrackMode::audio && m == insertIdx)
                         continue;
                     engine.setInsertInput (m, -1, false);
                     engine.setInsertArmed (m, false);
                 }
-                if (! engine.getInputChannelNames().empty())
-                    engine.setInsertInput (insertIdx, 0, false);
-                engine.setInsertArmed (insertIdx, true);
+                if (pt.mode == PlaylistTrackMode::audio)
+                {
+                    if (! engine.hasAudioInput())
+                        engine.openAudioInput();
+                    if (! engine.getInputChannelNames().empty())
+                        engine.setInsertInput (insertIdx, 0, false);
+                    engine.setInsertArmed (insertIdx, true);
+                }
             }
             repaint (0, tracksTop(), headerWidth, getHeight() - tracksTop());
         }
@@ -4846,7 +4826,10 @@ juce::PopupMenu PlaylistComponent::buildTrackMenu (int track)
                 int channel = -1;
                 bool ok = false;
                 engine.editSong ([track, &picked, &channel, &ok] (Song& s) {
-                    picked.mixerTrack = s.claimFreeInsert();
+                    const int existingIns = (track >= 0 && track < (int) s.playlistTracks.size())
+                                                ? s.playlistTracks[(std::size_t) track].mixerTrack : -1;
+                    picked.mixerTrack = (existingIns > 0 && existingIns < (int) s.mixer.size())
+                                            ? existingIns : s.claimFreeInsert();
                     s.channels.push_back (picked);
                     channel = (int) s.channels.size() - 1;
                     ok = trackmodes::makeInstrumentTrack (s, track, channel);
