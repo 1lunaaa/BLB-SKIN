@@ -7089,6 +7089,123 @@ bool addAudioClip (AudioEngine& engine, const juce::File& file, std::int64_t sta
 
 void PlaylistComponent::filesDropped (const juce::StringArray& files, int x, int y)
 {
+    // Si se suelta en la columna izquierda de cabeceras (sobre una pista o debajo), crear/cargar Sampler (como FL Studio)
+    if (x < headerWidth)
+    {
+        int dropTrack = (y >= tracksTop()) ? yToTrack (y) : (int) engine.getSong().playlistTracks.size();
+        if (dropTrack < 0)
+            dropTrack = (int) engine.getSong().playlistTracks.size();
+
+        const std::uint32_t palette[] = { 0xffff6b1a, 0xff00c4b4, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xff10b981 };
+        int lastChannel = -1;
+
+        for (const auto& f : files)
+        {
+            const juce::File file (f);
+            if (! file.existsAsFile() || videotracks::isVideoFile (file))
+                continue;
+
+            const auto samplePath = file.getFullPathName().toStdString();
+            const auto sampleName = file.getFileNameWithoutExtension().toStdString();
+
+            engine.editSong ([&, dropTrack, samplePath, sampleName] (Song& s) {
+                int targetTrack = dropTrack;
+                if (targetTrack >= (int) s.playlistTracks.size())
+                {
+                    targetTrack = (int) s.playlistTracks.size();
+                    const int insertIdx = juce::jlimit (1, maxMixerTracks - 1, targetTrack + 1);
+                    while ((int) s.mixer.size() <= insertIdx)
+                    {
+                        MixerTrack mt;
+                        mt.name = "Insert " + std::to_string (s.mixer.size());
+                        s.mixer.push_back (std::move (mt));
+                    }
+                    PlaylistTrack pt;
+                    pt.mode = PlaylistTrackMode::instrument;
+                    pt.name = sampleName;
+                    pt.colour = palette[(std::size_t) targetTrack % 6];
+                    pt.mixerTrack = insertIdx;
+                    s.playlistTracks.push_back (std::move (pt));
+                }
+
+                auto& pt = s.playlistTracks[(std::size_t) targetTrack];
+                int insertIdx = pt.mixerTrack;
+                if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
+                {
+                    insertIdx = juce::jlimit (1, maxMixerTracks - 1, targetTrack + 1);
+                    while ((int) s.mixer.size() <= insertIdx)
+                    {
+                        MixerTrack mt;
+                        mt.name = "Insert " + std::to_string (s.mixer.size());
+                        s.mixer.push_back (std::move (mt));
+                    }
+                    pt.mixerTrack = insertIdx;
+                }
+
+                pt.mode = PlaylistTrackMode::instrument;
+                pt.name = sampleName;
+                if (pt.colour == 0)
+                    pt.colour = palette[(std::size_t) targetTrack % 6];
+
+                int chIdx = pt.channel;
+                if (chIdx < 0 || chIdx >= (int) s.channels.size())
+                {
+                    ChannelDef ch;
+                    ch.instrument = InstrumentKind::sampler;
+                    ch.samplePath = samplePath;
+                    ch.name = sampleName;
+                    ch.mixerTrack = insertIdx;
+                    ch.colour = pt.colour;
+                    chIdx = (int) s.channels.size();
+                    s.channels.push_back (std::move (ch));
+                    pt.channel = chIdx;
+                }
+                else
+                {
+                    auto& ch = s.channels[(std::size_t) chIdx];
+                    ch.instrument = InstrumentKind::sampler;
+                    ch.samplePath = samplePath;
+                    ch.name = sampleName;
+                    ch.mixerTrack = insertIdx;
+                    ch.colour = pt.colour;
+                }
+
+                s.mixer[(std::size_t) insertIdx].name = sampleName;
+                s.mixer[(std::size_t) insertIdx].colour = pt.colour;
+                lastChannel = chIdx;
+
+                // Si la pista todavia no tiene un clip MIDI/pattern, crear uno listo para el Piano Roll
+                const bool hasClip = std::any_of (s.playlist.begin(), s.playlist.end(),
+                                                  [targetTrack] (const Clip& c) { return c.track == targetTrack; });
+                if (! hasClip)
+                {
+                    int patIdx = trackmodes::instrumentTrackPattern (s, targetTrack);
+                    if (patIdx < 0)
+                    {
+                        Pattern pat;
+                        pat.name = sampleName;
+                        patIdx = (int) s.patterns.size();
+                        s.patterns.push_back (std::move (pat));
+                    }
+                    s.currentPattern = patIdx;
+                    Clip clip;
+                    clip.kind = ClipKind::pattern;
+                    clip.pattern = patIdx;
+                    clip.track = targetTrack;
+                    clip.start = 0;
+                    clip.length = s.patterns[(std::size_t) patIdx].effectiveLength (s.beatsPerBar);
+                    s.playlist.push_back (clip);
+                }
+            });
+
+            ++dropTrack;
+        }
+
+        if (lastChannel >= 0)
+            engine.setSelectedChannel (lastChannel);
+        return;
+    }
+
     auto start = juce::jmax<std::int64_t> (0, snap (xToTick (x), true));
     auto track = yToTrack (y);
 
