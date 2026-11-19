@@ -4738,40 +4738,23 @@ juce::PopupMenu PlaylistComponent::buildTrackMenu (int track)
     const auto& song = engine.getSong();
     const auto count = numTracks();
     const auto info = track < (int) song.playlistTracks.size() ? song.playlistTracks[(std::size_t) track] : PlaylistTrack {};
+
+    bool hasClips = false;
+    for (const auto& c : song.playlist)
+    {
+        if (c.track == track)
+        {
+            hasClips = true;
+            break;
+        }
+    }
+
     juce::PopupMenu menu;
-    ui::addItemHeader (menu, tr ("Playlist track"), ! info.name.empty() ? juce::String::fromUTF8 (info.name.c_str()) : tr ("Track {0}", { juce::String (track + 1) }),
-                       info.colour != 0 ? juce::Colour (info.colour) : juce::Colour());
-    menu.addItem (theme::mnemonic (tr ("Rename and color..."), 'R'), [this, track] { renameTrack (track); });
-    menu.addSubMenu (tr ("Change color"), ui::colourMenu (info.colour, [this, track] (std::uint32_t colour) {
-                         editTrack (track, [colour] (PlaylistTrack& t) { t.colour = colour; });
-                     }, juce::Rectangle<int> (juce::Desktop::getMousePosition().x, juce::Desktop::getMousePosition().y, 1, 1)));
-    menu.addItem (tr ("Random color"), [this, track] {
-        const auto& palette = lynxPalette();
-        const auto c = palette[(std::size_t) juce::Random::getSystemRandom().nextInt ((int) palette.size())];
-        editTrack (track, [c] (PlaylistTrack& t) { t.colour = c; });
-    });
-    // FL's "Change icon" (EEPLTrackIconMenuClick, REA round 168h); LYNX's own icon set
-    menu.addItem (tr ("Change icon..."), [this, track, current = info.icon] {
-        ui::showTrackIconPicker (juce::Rectangle<int> (juce::Desktop::getMousePosition().x, juce::Desktop::getMousePosition().y, 1, 1), current, [this, track] (int icon) {
-            editTrack (track, [icon] (PlaylistTrack& t) { t.icon = icon; });
-        });
-    });
-    // FL's "Auto name" (EEPLTrackAutoNameMenuClick → FUN_012ef490, round 168f): the name and colour of what the track plays most
-    menu.addItem (theme::mnemonic (tr ("Auto name"), 'A'), [this, tracks = tracksForMenu (track)] {
-        engine.editSong ([tracks] (Song& s) {
-            for (const auto t : tracks)
-                pltracks::autoName (s, t);
-        });
-    });
-    menu.addItem (tr ("Reset"), [this, track] {
-        editTrack (track, [] (PlaylistTrack& t) {
-            t.name.clear();
-            t.colour = 0;
-            t.height = 0;
-            t.muted = false;
-        });
-    });
-    menu.addSeparator();
+
+    // 1. Renombrar
+    menu.addItem (tr ("Renombrar"), [this, track] { renameTrack (track); });
+
+    // 2. Track mode (intacto)
     {
         // FL's "Track mode" (round 146a): unassigned, an audio track (linked to a free mixer track) or an instrument
         // track (a channel and its mixer track)
@@ -4884,154 +4867,175 @@ juce::PopupMenu PlaylistComponent::buildTrackMenu (int track)
         modes.addSubMenu (theme::mnemonic (tr ("Instrument track"), 'I'), instruments, true, nullptr, info.mode == PlaylistTrackMode::instrument);
         menu.addSubMenu (theme::mnemonic (tr ("Track mode"), 'T'), modes);
     }
-    {
-        // FL's "Performance settings" (round 165m [DFM]): how the track's clips in the performance zone launch and play
-        using P = TrackPerformance;
-        const auto p = info.performance;
-        juce::PopupMenu perfMenu;
-        // FL's handler (0x1212fe0 → FUN_012ead80) sets the item on every selected track, in one undo step
-        auto set = [this, tracks = tracksForMenu (track)] (std::function<void (TrackPerformance&)> change) {
-            engine.editSong ([tracks, change] (Song& s) {
-                for (const auto t : tracks)
-                {
-                    if ((int) s.playlistTracks.size() <= t)
-                        s.playlistTracks.resize ((std::size_t) t + 1);
-                    change (s.playlistTracks[(std::size_t) t].performance);
-                }
-            });
-        };
-        perfMenu.addSectionHeader (tr ("Press"));
-        for (auto [value, text] : { std::pair { P::Press::retrigger, TR_NOOP ("Retrigger") }, { P::Press::holdStop, TR_NOOP ("Hold & stop") },
-                                    { P::Press::holdMotion, TR_NOOP ("Hold & motion") }, { P::Press::latch, TR_NOOP ("Latch") } })
-            perfMenu.addItem (tr (text), true, p.press == value, [set, value = value] { set ([value] (P& x) { x.press = value; }); });
-        perfMenu.addSectionHeader (tr ("Motion"));
-        for (auto [value, text] : { std::pair { P::Motion::stay, TR_NOOP ("Stay") }, { P::Motion::oneShot, TR_NOOP ("One shot") },
-                                    { P::Motion::marchWrap, TR_NOOP ("March & wrap") }, { P::Motion::marchStay, TR_NOOP ("March & stay") },
-                                    { P::Motion::marchStop, TR_NOOP ("March & stop") }, { P::Motion::random, TR_NOOP ("Random") },
-                                    { P::Motion::exclusiveRandom, TR_NOOP ("Exclusive random") } })
-            perfMenu.addItem (tr (text), true, p.motion == value, [set, value = value] { set ([value] (P& x) { x.motion = value; }); });
-        const std::pair<P::Sync, const char*> syncs[] = { { P::Sync::off, TR_NOOP ("Off") }, { P::Sync::quarterBeat, TR_NOOP ("1/4 beat") },
-                                                          { P::Sync::halfBeat, TR_NOOP ("1/2 beat") }, { P::Sync::beat, TR_NOOP ("1 beat") },
-                                                          { P::Sync::twoBeats, TR_NOOP ("2 beats") }, { P::Sync::fourBeats, TR_NOOP ("4 beats") },
-                                                          { P::Sync::autoLength, TR_NOOP ("Auto") } };
-        perfMenu.addSectionHeader (tr ("Trigger sync"));
-        for (const auto& [value, text] : syncs)
-            perfMenu.addItem (tr (text), true, p.triggerSync == value, [set, value = value] { set ([value] (P& x) { x.triggerSync = value; }); });
-        perfMenu.addSeparator();
-        perfMenu.addItem (tr ("Queue"), true, p.queue, [set] { set ([] (P& x) { x.queue = ! x.queue; }); });
-        perfMenu.addItem (tr ("Tolerant"), true, p.tolerant, [set] { set ([] (P& x) { x.tolerant = ! x.tolerant; }); });
-        perfMenu.addSectionHeader (tr ("Position sync"));
-        for (const auto& [value, text] : syncs)
-            perfMenu.addItem (tr (text), true, p.positionSync == value, [set, value = value] { set ([value] (P& x) { x.positionSync = value; }); });
-        menu.addSubMenu (theme::mnemonic (tr ("Performance settings"), 'P'), perfMenu);
-    }
     menu.addSeparator();
-    {
-        // FL's sizes are relative to the default row; dragging the divider under a header sets any size (P18)
-        juce::PopupMenu size, all;
-        const auto current = heightOf (track);
 
-        for (int percent : { 33, 50, 100, 150, 200 })
-        {
-            const auto h = polish::clampTrackHeight ((int) std::lround (trackHeight * percent / 100.0));
-            size.addItem (juce::String (percent) + "%", true, current == scaledHeight (h), [this, track, h] { setTrackHeights ({ track }, h); });
-            all.addItem (juce::String (percent) + "%", [this, count, h] {
-                std::vector<int> tracks;
-                for (int t = 0; t < count; ++t)
-                    tracks.push_back (t);
-                setTrackHeights (tracks, h);
-            });
-        }
-        size.addSeparator();
-        size.addSubMenu (tr ("Every track"), all);
-        menu.addSubMenu (theme::mnemonic (tr ("Size"), 'S'), size);
-    }
-    // FL's "Lock to this size" (EEPLTrackLockMenuClick 0x1228cb0, round 168f): the row keeps the height it has now
-    menu.addItem (theme::mnemonic (tr ("Lock to this size"), 'L'), true, info.lockedHeight > 0, [this, track, tracks = tracksForMenu (track)] {
-        const auto shown = heightOf (track);
-        engine.editSong ([tracks, shown] (Song& s) { pltracks::toggleSizeLock (s, tracks, shown); });
-        refreshTrackLayout();
-        updateScrollBars();
-        repaint();
-    });
+    // 3. Congelar
+    menu.addItem (tr ("Congelar"), hasClips, false, [this, track] { consolidatePlaylistTrack (engine, track, false); });
+
     menu.addSeparator();
+
+    // 4. Cambiar color (7 círculos estilo BandLab)
     {
-        // the sources of the track's clips: choosing one makes it what the pencil paints (FL's "Current clip source")
-        juce::PopupMenu sources;
-        std::vector<std::pair<ClipKind, int>> seen;
-        for (const auto& c : song.playlist)
+        struct BandLabColorRow final : public juce::PopupMenu::CustomComponent
         {
-            if (c.track != track)
-                continue;
-            const auto key = std::pair { c.kind, c.kind == ClipKind::pattern ? c.pattern : c.kind == ClipKind::audio ? c.channel : c.automation };
-            if (std::find (seen.begin(), seen.end(), key) != seen.end())
-                continue;
-            seen.push_back (key);
-            juce::String name;
-            if (key.first == ClipKind::pattern && key.second >= 0 && key.second < (int) song.patterns.size())
-                name = juce::String::fromUTF8 (song.patterns[(std::size_t) key.second].name.c_str());
-            else if (key.first == ClipKind::automation && key.second >= 0 && key.second < (int) song.automations.size())
-                name = juce::String::fromUTF8 (song.automations[(std::size_t) key.second].name.c_str());
-            else if (key.second >= 0 && key.second < (int) song.channels.size())
-                name = juce::String::fromUTF8 (song.channels[(std::size_t) key.second].name.c_str());
-            const auto ticked = brush.kind == key.first && (key.first == ClipKind::pattern ? song.currentPattern == key.second : brush.index == key.second);
-            sources.addItem (name, true, ticked, [this, key] {
-                brush.kind = key.first;
-                brush.index = key.first == ClipKind::pattern ? -1 : key.second;
-                if (key.first == ClipKind::pattern)
-                    engine.editSong ([p = key.second] (Song& s) { s.currentPattern = p; }, false);
-                engine.sendChangeMessage();
-            });
-        }
-        menu.addSubMenu (tr ("Current clip source"), sources, ! seen.empty());
-        // FL's "Lock to content" (EEPLTrackClipLockMenuClick → FUN_012e7a90, round 168f): painting on the track places
-        // its own content
-        menu.addItem (tr ("Lock to content"), true, info.lockedToContent, [this, tracks = tracksForMenu (track)] {
-            engine.editSong ([tracks] (Song& s) { pltracks::toggleLockToContent (s, tracks); });
-        });
-        auto muteAll = [this, track] (bool mute) {
-            engine.editSong ([track, mute] (Song& s) {
-                for (auto& c : s.playlist)
-                    if (c.track == track)
-                        c.muted = mute;
-            });
+            BandLabColorRow (std::uint32_t currentColour, std::function<void (std::uint32_t)> onPick)
+                : juce::PopupMenu::CustomComponent (false), current (currentColour), pick (std::move (onPick))
+            {
+            }
+
+            void getIdealSize (int& idealWidth, int& idealHeight) override
+            {
+                idealWidth = 228;
+                idealHeight = 66;
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                auto b = getLocalBounds().toFloat();
+                g.setColour (juce::Colour (0xfff4f4f6));
+                g.setFont (theme::font (13.0f, true));
+                g.drawText (juce::String::fromUTF8 ("Cambiar color"), b.removeFromTop (26.0f).withTrimmedLeft (14.0f),
+                            juce::Justification::centredLeft, false);
+
+                static constexpr std::uint32_t kSwatches[7] = {
+                    0xffa855f7, // violeta
+                    0xff3b82f6, // azul
+                    0xff06b6d4, // cian
+                    0xff10b981, // verde
+                    0xfff59e0b, // amarillo
+                    0xffea580c, // naranja
+                    0xffef4444  // rojo
+                };
+
+                const float d = 22.0f;
+                const float gap = 7.0f;
+                const float startX = 14.0f;
+                const float cy = 26.0f + (b.getHeight() - d) * 0.5f;
+
+                for (int i = 0; i < 7; ++i)
+                {
+                    const juce::Rectangle<float> circle (startX + i * (d + gap), cy, d, d);
+                    const auto col = juce::Colour (kSwatches[i]);
+                    g.setColour (col);
+                    g.fillEllipse (circle);
+
+                    if (hoverIdx == i)
+                    {
+                        g.setColour (juce::Colours::white.withAlpha (0.45f));
+                        g.drawEllipse (circle.expanded (1.5f), 1.5f);
+                    }
+
+                    if ((current & 0x00ffffffu) == (kSwatches[i] & 0x00ffffffu))
+                    {
+                        juce::Path check;
+                        const auto cx = circle.getCentreX();
+                        const auto my = circle.getCentreY();
+                        check.startNewSubPath (cx - 4.5f, my + 0.2f);
+                        check.lineTo (cx - 1.3f, my + 3.5f);
+                        check.lineTo (cx + 4.8f, my - 3.2f);
+                        g.setColour (juce::Colours::white);
+                        g.strokePath (check, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                    }
+                }
+            }
+
+            int hitSwatch (juce::Point<int> pos) const
+            {
+                const float d = 22.0f;
+                const float gap = 7.0f;
+                const float startX = 14.0f;
+                const float cy = 26.0f + ((float) getHeight() - 26.0f - d) * 0.5f;
+                for (int i = 0; i < 7; ++i)
+                {
+                    const juce::Rectangle<float> circle (startX + i * (d + gap), cy, d, d);
+                    if (circle.expanded (2.5f).contains (pos.toFloat()))
+                        return i;
+                }
+                return -1;
+            }
+
+            void mouseMove (const juce::MouseEvent& e) override
+            {
+                const int idx = hitSwatch (e.getPosition());
+                if (idx != hoverIdx)
+                {
+                    hoverIdx = idx;
+                    repaint();
+                }
+            }
+
+            void mouseExit (const juce::MouseEvent&) override
+            {
+                if (hoverIdx != -1)
+                {
+                    hoverIdx = -1;
+                    repaint();
+                }
+            }
+
+            void mouseUp (const juce::MouseEvent& e) override
+            {
+                static constexpr std::uint32_t kSwatches[7] = {
+                    0xffa855f7, 0xff3b82f6, 0xff06b6d4, 0xff10b981, 0xfff59e0b, 0xffea580c, 0xffef4444
+                };
+                const int idx = hitSwatch (e.getPosition());
+                if (idx >= 0 && idx < 7)
+                {
+                    if (pick)
+                        pick (kSwatches[idx]);
+                    triggerMenuItem();
+                }
+            }
+
+            std::uint32_t current = 0;
+            std::function<void (std::uint32_t)> pick;
+            int hoverIdx = -1;
         };
-        const auto hasClips = ! seen.empty();
-        {
-            // FL's "Consolidate track(s)" (round 146a): the track's clips rendered into one audio clip
-            juce::PopupMenu consolidate;
-            consolidate.addItem (theme::mnemonic (tr ("From track start"), 'F'), hasClips, false, [this, track] { consolidatePlaylistTrack (engine, track, false); });
-            consolidate.addItem (theme::mnemonic (tr ("From song start"), 's'), hasClips, false, [this, track] { consolidatePlaylistTrack (engine, track, true); });
-            menu.addSubMenu (theme::mnemonic (tr ("Consolidate track"), 'o'), consolidate, hasClips);
-        }
-        menu.addItem (tr ("Merge clips"), hasClips, false, [this, track] {
-            setSelection ({});
-            engine.editSong ([track] (Song& s) { clipops::mergeTrackClips (s, track); });
-            sortClips();
-        });
-        // FL's "Send pattern instances here" (EEPLTrackSendPatMenuClick → FUN_012db4e0, round 168f): the selected pattern
-        // clips, or every clip of the current pattern, move to this track
-        menu.addItem (tr ("Send pattern instances here"), [this, track] {
-            const auto chosen = selection;
-            engine.editSong ([track, chosen] (Song& s) { pltracks::sendPatternInstancesHere (s, track, chosen); });
-            sortClips();
-        });
-        menu.addItem (tr ("Mute all clips"), hasClips, false, [muteAll] { muteAll (true); });
-        menu.addItem (tr ("Unmute all clips"), hasClips, false, [muteAll] { muteAll (false); });
+
+        menu.addCustomItem (19001, std::make_unique<BandLabColorRow> (info.colour, [this, track] (std::uint32_t colour) {
+            editTrack (track, [colour] (PlaylistTrack& t) { t.colour = colour; });
+        }), nullptr, juce::String::fromUTF8 ("Cambiar color"));
     }
+
     menu.addSeparator();
-    menu.addItem (theme::mnemonic (tr ("Insert one"), 'I'), [this, track] {
-        setSelection ({});
-        engine.editSong ([track] (Song& s) { noteedit::insertTrack (s, track); });
+
+    // 5. Subir / Bajar
+    menu.addItem (tr ("Subir"), track > 0, false, [this, track] {
+        engine.editSong ([track] (Song& s) { noteedit::swapTracks (s, track, track - 1); });
     });
-    menu.addItem (theme::mnemonic (tr ("Clone..."), 'o'), [this, track] { cloneTracksWithDialog (tracksForMenu (track)); });
-    menu.addItem (theme::mnemonic (tr ("Delete"), 'e'), [this, track] {
+    menu.addItem (tr ("Bajar"), track + 1 < count, false, [this, track] {
+        engine.editSong ([track] (Song& s) { noteedit::swapTracks (s, track, track + 1); });
+    });
+
+    menu.addSeparator();
+
+    // 6. Importar desde disco / Exportar como audio
+    menu.addItem (tr ("Importar desde disco"), [this, track] {
+        auto chooser = std::make_shared<juce::FileChooser> (tr ("Importar desde disco"), juce::File(), "*.wav;*.mp3;*.ogg;*.flac;*.aif;*.aiff;*.mid;*.midi");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                              [this, track, chooser] (const juce::FileChooser& fc) {
+                                  const auto file = fc.getResult();
+                                  if (! file.existsAsFile())
+                                      return;
+                                  const int dropY = tracksTop() + track * juce::jmax (1, scaledHeight (trackHeight)) + 4;
+                                  filesDropped ({ file.getFullPathName() }, headerWidth + 4, dropY);
+                              });
+    });
+
+    {
+        juce::PopupMenu exportAudio;
+        exportAudio.addItem (tr ("Desde el inicio de la pista"), hasClips, false, [this, track] { consolidatePlaylistTrack (engine, track, false); });
+        exportAudio.addItem (tr ("Desde el inicio de la canciÃ³n"), hasClips, false, [this, track] { consolidatePlaylistTrack (engine, track, true); });
+        menu.addSubMenu (tr ("Exportar como audio"), exportAudio, hasClips);
+    }
+
+    // 7. Duplicar / Eliminar
+    menu.addItem (tr ("Duplicar"), [this, track] { cloneTracksWithDialog (tracksForMenu (track)); });
+    menu.addItem (tr ("Eliminar"), [this, track] {
         setSelection ({});
         engine.editSong ([track] (Song& s) { noteedit::removeTrack (s, track); });
     });
-    menu.addSeparator();
-    menu.addItem (theme::mnemonic (tr ("Move up"), 'u'), track > 0, false, [this, track] { engine.editSong ([track] (Song& s) { noteedit::swapTracks (s, track, track - 1); }); });
-    menu.addItem (theme::mnemonic (tr ("Move down"), 'd'), track + 1 < count, false, [this, track] { engine.editSong ([track] (Song& s) { noteedit::swapTracks (s, track, track + 1); }); });
+
     return menu;
 }
 
