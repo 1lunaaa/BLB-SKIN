@@ -507,10 +507,39 @@ void BandLabSoundsDrawer::mouseDown (const juce::MouseEvent& e)
     if (e.mods.isPopupMenu())
     {
         juce::PopupMenu menu;
-        if (r >= 0 && r < (int) rows.size() && rows[(std::size_t) r].isFolder)
+        if (r >= 0 && r < (int) rows.size())
         {
-            const auto targetDir = rows[(std::size_t) r].file;
-            menu.addItem (tr ("Ocultar carpeta"), [this, targetDir] { hideFolder (targetDir); });
+            const auto& item = rows[(std::size_t) r];
+            const auto targetFile = item.file;
+            const bool isFolder = item.isFolder;
+            if (isFolder)
+                menu.addItem (tr ("Ocultar carpeta"), [this, targetFile] { hideFolder (targetFile); });
+
+            menu.addItem (tr ("Mover a la papelera"), [this, targetFile, isFolder] {
+                if (! isFolder && playingFile == targetFile)
+                {
+                    playingFile = {};
+                    engine.previewFile ({});
+                }
+                if (targetFile.moveToTrash())
+                {
+                    if (isFolder)
+                    {
+                        const auto p = targetFile.getFullPathName();
+                        expandedPaths.erase (p);
+                        hiddenPaths.erase (p);
+                        saveHiddenFolders();
+                        const auto foldersFile = PluginHost::settingsFolder().getChildFile ("browser-folders.txt");
+                        if (foldersFile.existsAsFile())
+                        {
+                            auto lines = juce::StringArray::fromLines (foldersFile.loadFileAsString());
+                            lines.removeString (p, true);
+                            foldersFile.replaceWithText (lines.joinIntoString ("\n"));
+                        }
+                    }
+                    refreshPacks();
+                }
+            });
         }
         if (! hiddenPaths.empty())
         {
@@ -600,23 +629,38 @@ void BandLabSoundsDrawer::mouseWheelMove (const juce::MouseEvent&, const juce::M
 
 void BandLabSoundsDrawer::addFolderDialog()
 {
-    chooser = std::make_unique<juce::FileChooser> (tr ("Seleccionar carpeta de samples / beats"),
+    chooser = std::make_unique<juce::FileChooser> (tr ("Seleccionar carpetas de samples / beats"),
                                                    juce::File::getSpecialLocation (juce::File::userMusicDirectory));
-    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+    chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectDirectories
+                              | juce::FileBrowserComponent::canSelectMultipleItems,
                           [this] (const juce::FileChooser& fc) {
-                              const auto dir = fc.getResult();
-                              if (! dir.isDirectory())
+                              const auto results = fc.getResults();
+                              if (results.isEmpty())
                                   return;
+
                               const auto file = PluginHost::settingsFolder().getChildFile ("browser-folders.txt");
                               file.getParentDirectory().createDirectory();
                               auto lines = juce::StringArray::fromLines (file.loadFileAsString());
                               lines.removeEmptyStrings();
-                              const auto addedPath = dir.getFullPathName();
-hiddenPaths.erase (addedPath);
-saveHiddenFolders();
-lines.addIfNotAlreadyThere (addedPath);
+
+                              bool anyAdded = false;
+                              for (const auto& dir : results)
+                              {
+                                  if (! dir.isDirectory())
+                                      continue;
+                                  const auto addedPath = dir.getFullPathName();
+                                  hiddenPaths.erase (addedPath);
+                                  lines.addIfNotAlreadyThere (addedPath);
+                                  expandedPaths.insert (addedPath);
+                                  anyAdded = true;
+                              }
+
+                              if (! anyAdded)
+                                  return;
+
+                              saveHiddenFolders();
                               file.replaceWithText (lines.joinIntoString ("\n"));
-                              expandedPaths.insert (dir.getFullPathName());
                               refreshPacks();
                           });
 }

@@ -918,6 +918,7 @@ void Workspace::resized()
                 restoredState = pendingState;
             }
 
+        layout[Panel::browser].visible = false;
         layoutReady = true;
         pristine = ! restored;
         applyLayout();
@@ -974,6 +975,7 @@ void Workspace::paint (juce::Graphics& g)
 void Workspace::resetLayout()
 {
     layout = workspace::Layout::makeDefault (juce::jmax (1, getWidth()), juce::jmax (1, getHeight()));
+    layout[Panel::browser].visible = false;
     layoutReady = true;
     pristine = true;
     restoredState.clear();
