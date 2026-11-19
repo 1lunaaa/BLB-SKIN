@@ -1,4 +1,5 @@
 #include "ui/BandLabFxDrawer.h"
+#include "ui/ChannelRackComponent.h"
 
 #include "core/ValueMath.h"
 #include "engine/PluginHost.h"
@@ -12,6 +13,9 @@ namespace lynx
 BandLabFxDrawer::BandLabFxDrawer (AudioEngine& e)
     : engine (e)
 {
+    drumViewport.setScrollBarsShown (true, true);
+    drumViewport.setScrollBarThickness (8);
+    addChildComponent (drumViewport);
     engine.addChangeListener (this);
 }
 
@@ -228,6 +232,23 @@ void BandLabFxDrawer::setMode (Mode newMode)
         clearEmbeddedEditor();
     }
 
+    if (mode == Mode::drumMachine)
+    {
+        if (drumRack == nullptr)
+        {
+            auto rack = std::make_unique<ChannelRackComponent> (engine);
+            drumRack = std::move (rack);
+            drumViewport.setViewedComponent (drumRack.get(), false);
+        }
+        if (auto* r = dynamic_cast<ChannelRackComponent*> (drumRack.get()))
+            r->updateSize();
+        drumViewport.setVisible (true);
+    }
+    else
+    {
+        drumViewport.setVisible (false);
+    }
+
     resized();
     repaint();
 }
@@ -300,6 +321,30 @@ void BandLabFxDrawer::resized()
     if (isVisible() && mode == Mode::input && ! isTimerRunning())
         startTimerHz (30);
 
+    if (mode == Mode::drumMachine)
+    {
+        if (drumRack == nullptr)
+        {
+            auto rack = std::make_unique<ChannelRackComponent> (engine);
+            drumRack = std::move (rack);
+            drumViewport.setViewedComponent (drumRack.get(), false);
+        }
+        drumViewport.setVisible (true);
+    }
+    if (drumViewport.isVisible())
+    {
+        const int rightX = getWidth() - 136;
+        const int rackW = juce::jmax (240, rightX - 24);
+        const int rackH = juce::jmax (120, getHeight() - 50);
+        drumViewport.setBounds (16, 42, rackW, rackH);
+        if (auto* r = dynamic_cast<ChannelRackComponent*> (drumRack.get()))
+        {
+            r->updateSize();
+            if (r->getWidth() < rackW)
+                r->setSize (rackW, r->getHeight());
+        }
+    }
+
     if (embeddedEditor != nullptr)
     {
         const int rightX = getWidth() - 136;
@@ -335,11 +380,40 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
     g.setFont (font (type::smallSize, true));
     g.drawText ("X", cb.toNearestInt(), juce::Justification::centred, false);
 
-    icons::draw (g, Icon::mic, { 40.0f, 12.0f, 14.0f, 14.0f }, colour::warning);
+    if (mode == Mode::drumMachine)
+    {
+        const auto padBox = juce::Rectangle<float> (40.0f, 11.0f, 16.0f, 16.0f);
+        fillRoundRect (g, padBox, 3.5f, juce::Colour (0xffffb300));
+        g.setColour (juce::Colours::black.withAlpha (0.85f));
+        for (int gy = 0; gy < 2; ++gy)
+            for (int gx = 0; gx < 2; ++gx)
+                g.fillRect (padBox.getX() + 4.0f + gx * 5.0f, padBox.getY() + 4.0f + gy * 5.0f, 3.0f, 3.0f);
+    }
+    else
+    {
+        icons::draw (g, Icon::mic, { 40.0f, 12.0f, 14.0f, 14.0f }, colour::warning);
+    }
 
     g.setColour (colour::textPrimary);
     g.setFont (font (type::title, true));
-    g.drawText (trackTitle, 60, 7, 260, 24, juce::Justification::centredLeft, true);
+    g.drawText (mode == Mode::drumMachine ? tr ("Caja de ritmos") : trackTitle, 62, 7, 165, 24, juce::Justification::centredLeft, true);
+
+    if (mode == Mode::drumMachine)
+    {
+        const auto addRowR = addDrumRowBtnBounds().toFloat();
+        fillRoundRect (g, addRowR, 12.0f, hoverAddDrumRow ? colour::bg4 : colour::bg3);
+        g.setColour (colour::borderStrong);
+        g.drawRoundedRectangle (addRowR.reduced (0.5f), 12.0f, 1.0f);
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::caption, true));
+        g.drawText (tr ("+ Fila"), addRowR.toNearestInt(), juce::Justification::centred, false);
+
+        g.setColour (colour::textSecondary);
+        g.setFont (font (type::caption, false));
+        g.drawText (tr ("Arrastra samples (.wav / .mp3) sobre una fila para armar hi-hats, claps o kicks"),
+                    addRowR.getRight() + 14, 8, juce::jmax (120, getWidth() - 136 - (int) addRowR.getRight() - 24), 22,
+                    juce::Justification::centredLeft, true);
+    }
 
     if (mode == Mode::input)
     {
@@ -421,6 +495,8 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
         g.fillRect (256, 44, 1, getHeight() - 56);
     }
 
+    if (mode != Mode::drumMachine)
+    {
     // Ranuras de efectos (a la derecha de Fuente/AutoPitch, o desde la izquierda en modo Efectos)
     const auto indices = visibleEffectSlotIndices();
     const int cardW = 146;
@@ -517,6 +593,7 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
             g.drawText (juce::String::fromUTF8 ("Elegir / administrar"), juce::Rectangle<int> ((int) vstCard.getX() + 6, (int) vc.y + 18, (int) vstCard.getWidth() - 12, 16),
                         juce::Justification::centred, false);
         }
+    }
     }
 
     // Tira de Volumen vertical + Pan L/R a la derecha del panel
@@ -731,6 +808,12 @@ void BandLabFxDrawer::mouseMove (const juce::MouseEvent& e)
     const bool ha = addCardBounds().contains (e.getPosition());
     const bool hv = vstCardBounds().contains (e.getPosition());
     const bool hc = closeBtnBounds().contains (e.getPosition());
+    const bool hadr = (mode == Mode::drumMachine) && addDrumRowBtnBounds().contains (e.getPosition());
+    if (hadr != hoverAddDrumRow)
+    {
+        hoverAddDrumRow = hadr;
+        repaint();
+    }
     int hip = 0;
     if (mode == Mode::input)
     {
@@ -768,6 +851,25 @@ void BandLabFxDrawer::mouseDown (const juce::MouseEvent& e)
     {
         if (onClose)
             onClose();
+        return;
+    }
+
+    if (mode == Mode::drumMachine && addDrumRowBtnBounds().contains (e.getPosition()))
+    {
+        engine.editSong ([this] (Song& s) {
+            const std::uint32_t pal[] = { 0xfff59e0b, 0xff00c4b4, 0xffa855f7, 0xff3d8bfd, 0xff10b981, 0xffff6b1a };
+            const int idx = (int) s.channels.size();
+            ChannelDef ch;
+            ch.name = "Sample " + std::to_string (idx + 1);
+            ch.instrument = InstrumentKind::sampler;
+            ch.mixerTrack = juce::jlimit (1, maxMixerTracks - 1, track > 0 ? track : 1);
+            ch.colour = pal[(std::size_t) idx % 6];
+            s.channels.push_back (std::move (ch));
+        });
+        if (auto* r = dynamic_cast<ChannelRackComponent*> (drumRack.get()))
+            r->updateSize();
+        resized();
+        repaint();
         return;
     }
 

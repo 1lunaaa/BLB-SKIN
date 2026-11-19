@@ -58,6 +58,7 @@ class PlaylistComponent final : public juce::Component,
 public:
     std::function<void (int)> onOpenTrackFx;
     std::function<void (int)> onOpenTrackInput;
+    std::function<void (int)> onOpenDrumMachine;
     int getSelectedTrack() const noexcept { return currentTrack; }
 
 public:
@@ -700,6 +701,11 @@ public:
             fxDrawer.setMode (BandLabFxDrawer::Mode::input);
             toggleFxDrawer (true);
         };
+        playlist.onOpenDrumMachine = [this] (int trackIdx) {
+            fxDrawer.setTrack (trackIdx + 1);
+            fxDrawer.setMode (BandLabFxDrawer::Mode::drumMachine);
+            toggleFxDrawer (true);
+        };
 
         // Footer estilo BandLab dibujado como capsulas agrupadas con iconos en paint()
         engine.addChangeListener (this);
@@ -823,8 +829,10 @@ public:
         }
         if (fxOpen)
         {
-            const int desiredH = (fxDrawer.getMode() == BandLabFxDrawer::Mode::input) ? 268 : fxDrawerHeight;
-            fxDrawer.setBounds (area.removeFromBottom (juce::jmin (desiredH, (int) (area.getHeight() * 0.62f))));
+            const int desiredH = (fxDrawer.getMode() == BandLabFxDrawer::Mode::input) ? 268
+                               : (fxDrawer.getMode() == BandLabFxDrawer::Mode::drumMachine) ? 276
+                               : fxDrawerHeight;
+            fxDrawer.setBounds (area.removeFromBottom (juce::jmin (desiredH, (int) (area.getHeight() * 0.65f))));
         }
         if (clipGrid != nullptr && gridView != GridView::song)
         {
@@ -942,9 +950,14 @@ public:
         if (hadTracks)
         {
             drawPillContainer (leftPillBounds);
-            const bool apActive = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input;
+            const int selTrk = playlist.getSelectedTrack();
+            const auto& s = engine.getSong();
+            const bool isDrumTrack = selTrk >= 0 && selTrk < (int) s.playlistTracks.size()
+                                     && (s.playlistTracks[(std::size_t) selTrk].name == "Ritmos"
+                                         || s.playlistTracks[(std::size_t) selTrk].name == "Caja de ritmos");
+            const bool firstActive = fxOpen && (fxDrawer.getMode() == (isDrumTrack ? BandLabFxDrawer::Mode::drumMachine : BandLabFxDrawer::Mode::input));
             const bool fxActive = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::effects;
-            drawTab (1, autoPitchBounds, tr ("AutoPitch™"), apActive);
+            drawTab (1, autoPitchBounds, isDrumTrack ? tr ("Caja de ritmos") : tr ("AutoPitch™"), firstActive);
             drawTab (2, fxBounds, tr ("Fx Efectos"), fxActive);
             drawTab (3, editorBounds, tr ("Editor"), false);
         }
@@ -981,14 +994,20 @@ public:
         const int hit = hitTestFooterTab (e.getPosition());
         if (hit == 1)
         {
-            const int t = juce::jmax (1, playlist.getSelectedTrack() + 1);
+            const int selTrk = playlist.getSelectedTrack();
+            const int t = juce::jmax (1, selTrk + 1);
+            const auto& s = engine.getSong();
+            const bool isDrumTrack = selTrk >= 0 && selTrk < (int) s.playlistTracks.size()
+                                     && (s.playlistTracks[(std::size_t) selTrk].name == "Ritmos"
+                                         || s.playlistTracks[(std::size_t) selTrk].name == "Caja de ritmos");
+            const auto targetMode = isDrumTrack ? BandLabFxDrawer::Mode::drumMachine : BandLabFxDrawer::Mode::input;
             fxDrawer.setTrack (t);
-            const bool alreadyInput = fxOpen && fxDrawer.getMode() == BandLabFxDrawer::Mode::input;
-            if (alreadyInput)
+            const bool alreadyOpen = fxOpen && fxDrawer.getMode() == targetMode;
+            if (alreadyOpen)
                 toggleFxDrawer (false);
             else
             {
-                fxDrawer.setMode (BandLabFxDrawer::Mode::input);
+                fxDrawer.setMode (targetMode);
                 toggleFxDrawer (true);
             }
         }

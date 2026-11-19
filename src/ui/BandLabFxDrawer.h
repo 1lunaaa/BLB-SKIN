@@ -18,7 +18,7 @@ class BandLabFxDrawer final : public juce::Component,
                               private juce::Timer
 {
 public:
-    enum class Mode { effects, input };
+    enum class Mode { effects, input, drumMachine };
 
     explicit BandLabFxDrawer (AudioEngine& engine);
     ~BandLabFxDrawer() override;
@@ -79,6 +79,11 @@ private:
     std::shared_ptr<Effect> hostedEffectOwner;
     std::unique_ptr<juce::AudioProcessorEditor> embeddedEditor;
     juce::String autoPitchStatus;
+
+    std::unique_ptr<juce::Component> drumRack;
+    juce::Viewport drumViewport;
+    juce::Rectangle<int> addDrumRowBtnBounds() const { return { 230, 8, 86, 24 }; }
+    bool hoverAddDrumRow = false;
 
     int hoverSlot = -1;
     bool hoverAdd = false;

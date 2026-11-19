@@ -2127,9 +2127,27 @@ void PlaylistComponent::paint (juce::Graphics& g)
         theme::fillRoundRect (g, btn, btn.getHeight() * 0.5f, colour::bg4);
         g.setColour (colour::borderStrong);
         g.drawRoundedRectangle (btn.reduced (0.5f), btn.getHeight() * 0.5f, 1.0f);
+        const auto r = btn.toNearestInt();
+        const auto plusFont = font (type::smallSize + 2.5f, true);
+        const auto labelFont = font (type::smallSize + 1.0f, true);
+        const auto plusStr = juce::String ("+");
+        const auto labelStr = tr ("Añadir pista");
+
+        const int plusW = juce::jmax (10, juce::roundToInt (juce::GlyphArrangement::getStringWidth (plusFont, plusStr)));
+        const int labelW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (labelFont, labelStr));
+        const int gap = 5;
+        const int leftPad = 10;
+        int curX = r.getX() + leftPad;
+        const int availW = juce::jmax (12, r.getRight() - leftPad - curX);
+        juce::ignoreUnused (availW);
+
         g.setColour (colour::textPrimary);
-        g.setFont (font (type::smallSize, true));
-        textcache::drawText (g, tr ("+ Añadir pista"), btn.toNearestInt(), juce::Justification::centred);
+        g.setFont (plusFont);
+        textcache::drawText (g, plusStr, juce::Rectangle<int> (curX, r.getY() - 1, plusW, r.getHeight()), juce::Justification::centred);
+        curX += plusW + gap;
+
+        g.setFont (labelFont);
+        textcache::drawText (g, labelStr, juce::Rectangle<int> (curX, r.getY(), juce::jmax (12, r.getRight() - 5 - curX), r.getHeight()), juce::Justification::centredLeft);
 
         auto drawCircleBtn = [&] (juce::Rectangle<int> rInt)
         {
@@ -8134,23 +8152,25 @@ void PatternPicker::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWh
 juce::Rectangle<int> PlaylistComponent::addTrackButtonBounds() const
 {
     const int h = headerHeight - toolbarHeight - 12;
-    const int gap = 6;
-    const int circlesW = h * 2 + gap * 2;
-    return { 10, toolbarHeight + 6, juce::jmax (96, headerWidth - 20 - circlesW), h };
-}
-
-juce::Rectangle<int> PlaylistComponent::bandlabAutomationButtonBounds() const
-{
-    const auto add = addTrackButtonBounds();
-    const int d = add.getHeight();
-    return { add.getRight() + 8, add.getY(), d, d };
+    const int x = 10;
+    const int maxW = juce::jmax (84, headerWidth / 2 - 12);
+    return { x, toolbarHeight + 6, juce::jmin (114, maxW), h };
 }
 
 juce::Rectangle<int> PlaylistComponent::bandlabCompactViewButtonBounds() const
 {
-    const auto autoBtn = bandlabAutomationButtonBounds();
-    const int d = autoBtn.getHeight();
-    return { autoBtn.getRight() + 6, autoBtn.getY(), d, d };
+    const int h = headerHeight - toolbarHeight - 12;
+    const int d = h;
+    const int x = headerWidth - 10 - d;
+    return { x, toolbarHeight + 6, d, d };
+}
+
+juce::Rectangle<int> PlaylistComponent::bandlabAutomationButtonBounds() const
+{
+    const auto viewBtn = bandlabCompactViewButtonBounds();
+    const int d = viewBtn.getHeight();
+    const int gap = 6;
+    return { viewBtn.getX() - gap - d, viewBtn.getY(), d, d };
 }
 
 juce::Rectangle<int> PlaylistComponent::bandlabRightToolsBounds() const
@@ -8180,17 +8200,213 @@ juce::Rectangle<int> PlaylistComponent::bandlabZoomInButtonBounds() const
     return b;
 }
 
+namespace
+{
+struct NewTrackOption
+{
+    int kind;
+    const char* title;
+    const char* subtitle;
+    bool isMidi;
+    juce::Colour badgeColour;
+};
+
+class BandLabNewTrackPopup final : public juce::Component
+{
+public:
+    BandLabNewTrackPopup (std::function<void (int)> onSelectFn)
+        : onSelect (std::move (onSelectFn))
+    {
+        setOpaque (false);
+        setSize (310, 316);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+        const auto bounds = getLocalBounds().toFloat().reduced (1.0f);
+        const juce::Colour cardBg (0xff121316);
+        const juce::Colour rowHover (0xff23262d);
+        const juce::Colour borderCol (0xff2b2e36);
+
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillRoundedRectangle (bounds.translated (0.0f, 4.0f), 14.0f);
+
+        fillRoundRect (g, bounds, 14.0f, cardBg);
+        g.setColour (borderCol);
+        g.drawRoundedRectangle (bounds, 14.0f, 1.0f);
+
+        g.setColour (colour::textPrimary);
+        g.setFont (font (18.0f, true));
+        g.drawText (tr ("Nueva pista"), 18, 14, getWidth() - 36, 28, juce::Justification::centredLeft, true);
+
+        const NewTrackOption items[] {
+            { 0, "Voz/Audio",              "Graba con AutoPitch + efectos especiales", false, juce::Colour (0xffe53935) },
+            { 1, "Instrumentos virtuales", "Kits de grabación, claves y mucho más",   true,  juce::Colour (0xff00c853) },
+            { 2, "Caja de ritmos",         "Crea beats en segundos",                   true,  juce::Colour (0xffffb300) },
+            { 3, "Sampler",                "Convierte cualquier sonido en un instrumento", true, juce::Colour (0xffaa00ff) }
+        };
+
+        const int startY = 50;
+        const int rowH = 62;
+        for (int i = 0; i < 4; ++i)
+        {
+            const auto& opt = items[i];
+            const auto row = juce::Rectangle<int> (8, startY + i * rowH, getWidth() - 16, rowH - 2);
+            if (hoverIndex == i)
+            {
+                fillRoundRect (g, row.toFloat(), 10.0f, rowHover);
+            }
+
+            const auto iconR = juce::Rectangle<float> ((float) row.getX() + 8.0f, (float) row.getCentreY() - 18.0f, 36.0f, 36.0f);
+            fillRoundRect (g, iconR, 9.0f, opt.badgeColour);
+
+            g.setColour (juce::Colours::white);
+            const float cx = iconR.getCentreX(), cy = iconR.getCentreY();
+            if (opt.kind == 0)
+            {
+                icons::draw (g, Icon::mic, iconR.reduced (8.0f), juce::Colours::white);
+            }
+            else if (opt.kind == 1)
+            {
+                g.drawRoundedRectangle (iconR.reduced (8.0f, 10.0f), 2.0f, 1.6f);
+                g.drawVerticalLine (juce::roundToInt (cx - 2.0f), cy - 6.0f, cy + 2.0f);
+                g.drawVerticalLine (juce::roundToInt (cx + 2.0f), cy - 6.0f, cy + 2.0f);
+            }
+            else if (opt.kind == 2)
+            {
+                g.drawRoundedRectangle (iconR.reduced (8.0f, 9.0f), 2.5f, 1.6f);
+                for (int gy = -4; gy <= 4; gy += 4)
+                    for (int gx = -4; gx <= 4; gx += 4)
+                        g.fillRect (cx + (float) gx - 1.2f, cy + (float) gy - 1.2f, 2.4f, 2.4f);
+            }
+            else
+            {
+                const float bars[] { 5.0f, 11.0f, 16.0f, 10.0f, 6.0f };
+                const float startX = cx - 10.0f;
+                for (int b = 0; b < 5; ++b)
+                {
+                    const float bh = bars[b];
+                    g.fillRoundedRectangle (startX + (float) b * 4.5f, cy - bh * 0.5f, 2.5f, bh, 1.2f);
+                }
+            }
+
+            const int textX = (int) iconR.getRight() + 12;
+            const auto titleStr = tr (opt.title);
+            const auto titleFont = font (13.5f, true);
+            g.setColour (colour::textPrimary);
+            g.setFont (titleFont);
+            const int titleW = juce::roundToInt (juce::GlyphArrangement::getStringWidth (titleFont, titleStr));
+            g.drawText (titleStr, textX, row.getY() + 8, juce::jmin (titleW + 4, row.getRight() - textX - 44), 20, juce::Justification::centredLeft, true);
+
+            if (opt.isMidi)
+            {
+                const int badgeX = textX + juce::jmin (titleW + 6, row.getRight() - textX - 78);
+                const auto midiRect = juce::Rectangle<float> ((float) badgeX, (float) row.getY() + 10.0f, 28.0f, 15.0f);
+                fillRoundRect (g, midiRect, 3.0f, juce::Colour (0xff2b2e36));
+                g.setColour (juce::Colours::white);
+                g.setFont (font (9.0f, true));
+                g.drawText ("MIDI", midiRect.toNearestInt(), juce::Justification::centred, false);
+            }
+
+            g.setColour (colour::textSecondary);
+            g.setFont (font (11.0f, false));
+            g.drawText (tr (opt.subtitle), textX, row.getY() + 30, row.getRight() - textX - 8, 18, juce::Justification::centredLeft, true);
+        }
+    }
+
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        const int idx = indexAt (e.getPosition());
+        if (idx != hoverIndex)
+        {
+            hoverIndex = idx;
+            repaint();
+        }
+    }
+
+    void mouseExit (const juce::MouseEvent&) override
+    {
+        if (hoverIndex != -1)
+        {
+            hoverIndex = -1;
+            repaint();
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const int idx = indexAt (e.getPosition());
+        if (idx >= 0)
+        {
+            auto fn = onSelect;
+            dismiss();
+            if (fn)
+                fn (idx);
+        }
+    }
+
+    bool keyPressed (const juce::KeyPress& key) override
+    {
+        if (key == juce::KeyPress::escapeKey)
+        {
+            dismiss();
+            return true;
+        }
+        return false;
+    }
+
+    void dismiss()
+    {
+        if (isDismissing)
+            return;
+        isDismissing = true;
+        setVisible (false);
+        if (auto* parent = getParentComponent())
+            parent->removeChildComponent (this);
+        delete this;
+    }
+
+private:
+    int indexAt (juce::Point<int> pt) const
+    {
+        const int startY = 50;
+        const int rowH = 62;
+        for (int i = 0; i < 4; ++i)
+        {
+            const auto row = juce::Rectangle<int> (8, startY + i * rowH, getWidth() - 16, rowH - 2);
+            if (row.contains (pt))
+                return i;
+        }
+        return -1;
+    }
+
+    std::function<void (int)> onSelect;
+    int hoverIndex = -1;
+    bool isDismissing = false;
+};
+} // namespace
+
 void PlaylistComponent::showAddTrackMenu()
 {
-    juce::PopupMenu menu;
-    menu.addItem (1, tr ("Voz / Audio"));
-    menu.addItem (2, tr ("Instrumento / Synth"));
-    menu.addItem (3, tr ("Caja de ritmos (Drum Machine)"));
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (addTrackButtonBounds())),
-                        [this] (int result) {
-                            if (result >= 1 && result <= 3)
-                                addBandLabTrack (result - 1);
-                        });
+    auto* host = getTopLevelComponent();
+    if (host == nullptr)
+        return;
+
+    for (int i = host->getNumChildComponents() - 1; i >= 0; --i)
+    {
+        if (auto* existing = dynamic_cast<BandLabNewTrackPopup*> (host->getChildComponent (i)))
+            existing->dismiss();
+    }
+
+    const auto btnInHost = host->getLocalArea (this, addTrackButtonBounds());
+    auto* popup = new BandLabNewTrackPopup ([this] (int kind) {
+        addBandLabTrack (kind);
+    });
+    popup->setTopLeftPosition (btnInHost.getX(), btnInHost.getBottom() + 6);
+    host->addAndMakeVisible (popup);
+    popup->toFront (true);
+    popup->grabKeyboardFocus();
 }
 
 void PlaylistComponent::addBandLabTrack (int kind)
@@ -8229,12 +8445,30 @@ void PlaylistComponent::addBandLabTrack (int kind)
             s.channels.push_back (std::move (ch));
             s.mixer[(std::size_t) insertIdx].name = pt.name;
         }
+        else if (kind == 2)
+        {
+            pt.mode = PlaylistTrackMode::instrument;
+            pt.name = "Caja de ritmos";
+            const char* defaultPads[] { "Kick", "Clap / Snare", "Hi-Hat", "Open Hat" };
+            const std::uint32_t padColours[] { 0xfff59e0b, 0xff00c4b4, 0xffa855f7, 0xff3d8bfd };
+            pt.channel = (int) s.channels.size();
+            for (int pIdx = 0; pIdx < 4; ++pIdx)
+            {
+                ChannelDef ch;
+                ch.name = defaultPads[pIdx];
+                ch.instrument = InstrumentKind::sampler;
+                ch.mixerTrack = insertIdx;
+                ch.colour = padColours[pIdx];
+                s.channels.push_back (std::move (ch));
+            }
+            s.mixer[(std::size_t) insertIdx].name = pt.name;
+        }
         else
         {
             pt.mode = PlaylistTrackMode::instrument;
-            pt.name = "Ritmos";
+            pt.name = "Sampler";
             ChannelDef ch;
-            ch.name = "Ritmos " + std::to_string (trackIdx + 1);
+            ch.name = "Sampler " + std::to_string (trackIdx + 1);
             ch.instrument = InstrumentKind::sampler;
             ch.mixerTrack = insertIdx;
             ch.colour = pt.colour;
@@ -8250,6 +8484,8 @@ void PlaylistComponent::addBandLabTrack (int kind)
     refreshTrackLayout();
     updateScrollBars();
     repaint();
+    if (kind == 2 && onOpenDrumMachine)
+        onOpenDrumMachine (currentTrack);
 }
 
 } // namespace lynx
