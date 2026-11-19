@@ -240,6 +240,9 @@ MainComponent::MainComponent (AudioEngine& e, bool restoreUserSettings)
         stopAndRewind (true);
     };
     stopButton.onRightClick = [this] { showStopMenu(); };
+    for (auto* b : { &playButton, &stopButton, &recordButton })
+        b->setIconSizing (1.0f, 26.0f);
+    loopRecordButton.setIconSizing (0.94f, 24.0f);
     output.onModeChanged = [this] { saveUiSettings(); };
     recordButton.setOnColour (theme::colour::record);
     recordButton.setIconColour (theme::colour::record.withMultipliedSaturation (0.8f));
@@ -827,35 +830,76 @@ void MainComponent::paint (juce::Graphics& g)
     g.setColour (colour::textPrimary);
     g.drawText (name, 180, 7, juce::jmax (80, getWidth() - 390), 24, juce::Justification::centred, true);
 
-    // Capsula de Metronomo + BPM + Compas (4/4) en Fila 2
+    // Capsula pill de Metronomo + BPM + Compas (4/4) en Fila 2
     if (! snapLabelArea.isEmpty())
     {
-        fillRoundRect (g, snapLabelArea.toFloat(), radius::md, colour::bg3);
-        g.setColour (colour::border);
-        g.drawRoundedRectangle (snapLabelArea.toFloat().reduced (0.5f), radius::md, 1.0f);
+        const auto sf = snapLabelArea.toFloat();
+        const float pillR = sf.getHeight() * 0.5f;
+        fillRoundRect (g, sf, pillR, juce::Colour (0xff191b1e));
+        g.setColour (juce::Colour (0xff070709));
+        g.drawRoundedRectangle (sf.reduced (0.5f), pillR, 1.0f);
+
+        const float sepX[] {
+            (float) tempoDisplay.getX() - 2.0f,
+            (float) timeSigBounds().getX() - 2.0f
+        };
+        for (float sx : sepX)
+            g.drawVerticalLine (juce::roundToInt (sx), sf.getY() + 1.0f, sf.getBottom() - 1.0f);
     }
     if (! timeSigBounds().isEmpty())
     {
         const auto ts = timeSigBounds();
         const auto& s = engine.getSong();
+        const auto beatsStr = juce::String (s.beatsPerBar);
+        const auto slashStr = juce::String ("/");
+        const auto denomStr = juce::String ("4");
+        const auto sigFont = font (type::smallSize, true);
+        g.setFont (sigFont);
+
+        const int wBeats = juce::jmax (8, juce::roundToInt (juce::GlyphArrangement::getStringWidth (sigFont, beatsStr)));
+        const int wSlash = juce::jmax (6, juce::roundToInt (juce::GlyphArrangement::getStringWidth (sigFont, slashStr)));
+        const int wDenom = juce::jmax (8, juce::roundToInt (juce::GlyphArrangement::getStringWidth (sigFont, denomStr)));
+        const int gap = 2;
+        const int totalW = wBeats + wSlash + wDenom + gap * 2;
+        int x = ts.getCentreX() - totalW / 2;
+
         g.setColour (colour::textPrimary);
-        g.setFont (font (type::smallSize, true));
-        g.drawText (juce::String (s.beatsPerBar) + " / " + "4", ts, juce::Justification::centred, false);
+        g.drawText (beatsStr, juce::Rectangle<int> (x, ts.getY(), wBeats, ts.getHeight()), juce::Justification::centred, false);
+        x += wBeats + gap;
+
+        g.setColour (colour::textSecondary);
+        g.drawText (slashStr, juce::Rectangle<int> (x, ts.getY(), wSlash, ts.getHeight()), juce::Justification::centred, false);
+        x += wSlash + gap;
+
+        g.setColour (colour::textPrimary);
+        g.drawText (denomStr, juce::Rectangle<int> (x, ts.getY(), wDenom, ts.getHeight()), juce::Justification::centred, false);
     }
 
-    // Capsula central de Transporte + Reloj en Fila 2
+    // Capsula central de Transporte + Reloj en Fila 2 (forma pill unificada con divisores)
     if (! transportArea.isEmpty())
     {
-        fillRoundRect (g, transportArea.toFloat(), radius::md, colour::bg3);
-        g.setColour (colour::border);
-        g.drawRoundedRectangle (transportArea.toFloat().reduced (0.5f), radius::md, 1.0f);
+        const auto tf = transportArea.toFloat();
+        const float pillR = tf.getHeight() * 0.5f;
+        fillRoundRect (g, tf, pillR, juce::Colour (0xff151517));
+        g.setColour (juce::Colour (0xff070709));
+        g.drawRoundedRectangle (tf.reduced (0.5f), pillR, 1.0f);
+
+        const float sepX[] {
+            (float) stopButton.getX() - 2.0f,
+            (float) recordButton.getX() - 2.0f,
+            (float) loopRecordButton.getX() - 2.0f,
+            (float) timeDisplay.getX() - 2.0f
+        };
+        g.setColour (juce::Colour (0xff070709));
+        for (float sx : sepX)
+            g.drawVerticalLine (juce::roundToInt (sx), tf.getY() + 1.0f, tf.getBottom() - 1.0f);
     }
 
     // Boton pill "Masterizando" a la derecha de Fila 2
     {
         const auto mBtn = masterPillBounds().toFloat();
-        fillRoundRect (g, mBtn, mBtn.getHeight() * 0.5f, colour::bg3);
-        g.setColour (colour::borderStrong);
+        fillRoundRect (g, mBtn, mBtn.getHeight() * 0.5f, juce::Colour (0xff191b1e));
+        g.setColour (juce::Colour (0xff070709));
         g.drawRoundedRectangle (mBtn.reduced (0.5f), mBtn.getHeight() * 0.5f, 1.0f);
         icons::draw (g, Icon::mixer, juce::Rectangle<float> (mBtn.getX() + 10.0f, mBtn.getCentreY() - 7.0f, 14.0f, 14.0f), colour::accent);
         g.setColour (colour::textPrimary);
@@ -905,19 +949,19 @@ void MainComponent::resized()
 
     // Capsula Tempo: Metronomo + BPM + Compas (4/4)
     const int tempoX = 118;
-    snapLabelArea = { tempoX, 42, 166, 28 };
+    snapLabelArea = { tempoX, 42, 184, 28 };
     put (metronomeButton, { tempoX + 4, 44, 24, 24 });
-    put (tempoDisplay,    { tempoX + 32, 44, 82, 24 });
+    put (tempoDisplay,    { tempoX + 32, 44, 74, 24 });
 
     // Capsula Transporte centrada: Play, Stop, Record, Loop + Reloj
-    const int transW = 248;
-    const int transX = juce::jmax (tempoX + 178, (getWidth() - transW) / 2);
+    const int transW = 250;
+    const int transX = juce::jmax (tempoX + 196, (getWidth() - transW) / 2);
     transportArea = { transX, 42, transW, 28 };
-    put (playButton,       { transX + 6,   44, 26, 24 });
-    put (stopButton,       { transX + 36,  44, 26, 24 });
-    put (recordButton,     { transX + 66,  44, 26, 24 });
-    put (loopRecordButton, { transX + 96,  44, 26, 24 });
-    put (timeDisplay,      { transX + 128, 44, 114, 24 });
+    put (playButton,       { transX + 8,   44, 28, 24 });
+    put (stopButton,       { transX + 41,  44, 28, 24 });
+    put (recordButton,     { transX + 74,  44, 28, 24 });
+    put (loopRecordButton, { transX + 107, 44, 28, 24 });
+    put (timeDisplay,      { transX + 140, 44, 102, 24 });
 
     auto below = getLocalBounds().withTrimmedTop (toolbarHeight);
     if (false)
@@ -1171,7 +1215,7 @@ juce::Rectangle<int> MainComponent::timeSigBounds() const
 {
     if (snapLabelArea.isEmpty())
         return {};
-    return { snapLabelArea.getRight() - 48, snapLabelArea.getY(), 46, snapLabelArea.getHeight() };
+    return { snapLabelArea.getRight() - 72, snapLabelArea.getY(), 70, snapLabelArea.getHeight() };
 }
 
 void MainComponent::showAppMenu()

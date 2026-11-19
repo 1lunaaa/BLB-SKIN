@@ -187,8 +187,10 @@ juce::String TimeDisplay::text() const
     const auto seconds = song.secondsForTicks ((std::int64_t) ticks);
     if (mode == Mode::smpte)
         return juce::String (timecode::format (seconds, smpteRate));
-    const auto whole = (int) seconds;
-    return juce::String::formatted ("%d : %02d : %02d", whole / 60, whole % 60, (int) ((seconds - whole) * 100.0));
+    const auto safeSec = juce::jmax (0.0, seconds);
+    const auto whole = (int) safeSec;
+    const auto tenths = juce::jlimit (0, 9, (int) ((safeSec - whole) * 10.0));
+    return juce::String::formatted ("%02d:%02d.%d", whole / 60, whole % 60, tenths);
 }
 
 void TimeDisplay::update()
@@ -204,30 +206,14 @@ void TimeDisplay::paint (juce::Graphics& g)
 {
     using namespace theme;
     const auto area = getLocalBounds();
-    g.setColour (colour::bg1);
-    g.fillRoundedRectangle (area.toFloat(), radius::md);
-
-    if (isMouseOver())
-    {
-        g.setColour (colour::borderStrong);
-        g.drawRoundedRectangle (area.toFloat().reduced (0.5f), radius::md, 1.0f);
-    }
 
     g.setColour (colour::textPrimary);
-    // round 170e3: the song position is the toolbar's centre (FL users look there first): a larger readout
     const auto readout = shown.isEmpty() ? text() : shown;
-    auto readoutFont = monoFont (juce::jmin (26.0f, (float) area.getHeight() * 0.52f));
-    // a narrow display (the compact toolbar) shrinks the digits instead of cutting them off
+    auto readoutFont = monoFont (juce::jmin (11.5f, (float) area.getHeight() * 0.45f)).withStyle ("Bold");
     for (int i = 0; i < 12 && juce::GlyphArrangement::getStringWidth (readoutFont, readout) > (float) area.getWidth() - 8.0f; ++i)
         readoutFont = readoutFont.withHeight (readoutFont.getHeight() * 0.92f);
     g.setFont (readoutFont);
-    g.drawText (readout, area.withTrimmedBottom (11), juce::Justification::centred, false);
-    g.setColour (colour::textDisabled);
-    g.setFont (font (type::caption - 1.0f));
-    g.drawText (mode == Mode::clock   ? tr ("MIN : SEC : CS")
-                : mode == Mode::smpte ? "SMPTE " + juce::String (timecode::rates[smpteRate].name)
-                                      : tr ("BAR : BEAT : STEP"), area.withTrimmedTop (area.getHeight() - 14).withTrimmedBottom (2),
-                juce::Justification::centred, false);
+    g.drawText (readout, area.withTrimmedTop (2), juce::Justification::centred, false);
 }
 
 void TimeDisplay::mouseUp (const juce::MouseEvent& e)

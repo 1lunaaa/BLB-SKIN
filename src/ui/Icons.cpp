@@ -95,8 +95,8 @@ Shape make (Icon icon)
         case Icon::play:
         {
             juce::Path tri;
-            tri.addTriangle (7.0f, 4.5f, 7.0f, 19.5f, 19.5f, 12.0f);
-            fi = tri.createPathWithRoundedCorners (2.0f);
+            tri.addTriangle (5.0f, 3.0f, 5.0f, 21.0f, 21.0f, 12.0f);
+            fi = tri.createPathWithRoundedCorners (1.0f);
             break;
         }
         case Icon::pause:
@@ -104,10 +104,15 @@ Shape make (Icon icon)
             fi.addRoundedRectangle (13.5f, 5.0f, 4.5f, 14.0f, 1.25f);
             break;
         case Icon::stop:
-            fi.addRoundedRectangle (5.5f, 5.5f, 13.0f, 13.0f, 2.25f);
+        {
+            fi.addRectangle (3.2f, 3.5f, 2.8f, 17.0f);
+            juce::Path tri;
+            tri.addTriangle (20.8f, 3.8f, 20.8f, 20.2f, 7.2f, 12.0f);
+            fi.addPath (tri.createPathWithRoundedCorners (1.0f));
             break;
+        }
         case Icon::record:
-            fi.addEllipse (5.0f, 5.0f, 14.0f, 14.0f);
+            fi.addEllipse (1.4f, 1.4f, 21.2f, 21.2f);
             break;
 
         // --- small glyphs ---
@@ -678,21 +683,12 @@ Shape make (Icon icon)
             line (st, 4.5f, 10.5f, 7.0f, 13.0f);
             line (st, 19.5f, 10.5f, 17.0f, 13.0f);
             break;
-        case Icon::loopRecord: // a loop arrow around a record dot
-        {
-            constexpr float r = 8.0f;
-            juce::Path a;
-            a.addCentredArc (12.0f, 12.0f, r, r, 0.0f, pi * 0.25f, pi * 1.85f, true);
-            st.addPath (a);
-            const auto to = pi * 1.85f;
-            const juce::Point<float> end (12.0f + r * std::sin (to), 12.0f - r * std::cos (to));
-            const juce::Point<float> along (std::cos (to), std::sin (to)), out (std::sin (to), -std::cos (to));
-            juce::Path h;
-            h.addTriangle (end + along * 3.8f, end + out * 3.3f - along * 0.6f, end - out * 3.3f - along * 0.6f);
-            fi.addPath (h);
-            fi.addEllipse (8.5f, 8.5f, 7.0f, 7.0f);
+        case Icon::loopRecord: // dos flechas horizontales opuestas estilo BandLab
+            polyline (st, { { 3.5f, 8.2f }, { 20.5f, 8.2f } });
+            polyline (st, { { 17.0f, 5.0f }, { 20.5f, 8.2f }, { 17.0f, 11.4f } });
+            polyline (st, { { 20.5f, 15.8f }, { 3.5f, 15.8f } });
+            polyline (st, { { 7.0f, 12.6f }, { 3.5f, 15.8f }, { 7.0f, 19.0f } });
             break;
-        }
         case Icon::stepEdit: // three steps typed one after another (the last one hollow: the next), an arrow on to it
             fi.addRoundedRectangle (2.5f, 14.0f, 5.0f, 5.0f, 1.0f);
             fi.addRoundedRectangle (9.5f, 14.0f, 5.0f, 5.0f, 1.0f);
