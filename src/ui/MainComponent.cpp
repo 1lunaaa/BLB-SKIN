@@ -3706,8 +3706,6 @@ void MainComponent::TempoDisplay::paint (juce::Graphics& g)
 {
     using namespace theme;
     const auto area = getLocalBounds().toFloat();
-    g.setColour (colour::bg1);
-    g.fillRoundedRectangle (area, radius::md);
 
     if (dragging)
     {
@@ -3716,28 +3714,26 @@ void MainComponent::TempoDisplay::paint (juce::Graphics& g)
     }
 
     const auto bpm = engine.getSong().bpm;
-    const auto whole = juce::String ((int) std::floor (bpm + 1e-9));
-    const auto fraction = juce::String (bpm - std::floor (bpm + 1e-9), 3).fromFirstOccurrenceOf (".", false, false).paddedRight ('0', 3).substring (0, 3);
+    const auto whole = juce::String (juce::roundToInt (bpm));
+    const juce::String unit = "bpm";
 
-    const juce::Font big (monoFont (18.0f)), small (monoFont (11.0f)), caption (font (type::caption - 1.0f));
+    const juce::Font big (monoFont (14.5f).withStyle ("Bold"));
+    const juce::Font caption (font (type::caption));
     const auto wholeWidth = juce::GlyphArrangement::getStringWidth (big, whole);
-    const auto fracWidth = juce::GlyphArrangement::getStringWidth (small, "." + fraction);
-    const auto unitWidth = juce::GlyphArrangement::getStringWidth (caption, "BPM");
-    auto x = area.getCentreX() - (wholeWidth + fracWidth + 6.0f + unitWidth) / 2.0f;
-    const auto baseline = area.getCentreY() + 5.0f;
+    const auto unitWidth = juce::GlyphArrangement::getStringWidth (caption, unit);
+    const float gap = 4.0f;
+    auto x = area.getCentreX() - (wholeWidth + gap + unitWidth) / 2.0f;
+    decimalX = juce::roundToInt (x + wholeWidth);
+    const auto baseline = area.getCentreY() + 4.5f;
 
     g.setColour (colour::textPrimary);
     g.setFont (big);
     g.drawSingleLineText (whole, juce::roundToInt (x), juce::roundToInt (baseline));
-    x += wholeWidth;
-    decimalX = juce::roundToInt (x);
-    g.setColour (dragOnDecimals && dragging ? colour::textPrimary : colour::textSecondary);
-    g.setFont (small);
-    g.drawSingleLineText ("." + fraction, juce::roundToInt (x), juce::roundToInt (baseline));
-    x += fracWidth + 6.0f;
-    g.setColour (colour::textDisabled);
+    x += wholeWidth + gap;
+
+    g.setColour (colour::textSecondary);
     g.setFont (caption);
-    g.drawSingleLineText ("BPM", juce::roundToInt (x), juce::roundToInt (baseline));
+    g.drawSingleLineText (unit, juce::roundToInt (x), juce::roundToInt (baseline));
 }
 
 void MainComponent::TempoDisplay::mouseDown (const juce::MouseEvent& e)
