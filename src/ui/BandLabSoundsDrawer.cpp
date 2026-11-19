@@ -256,6 +256,49 @@ void BandLabSoundsDrawer::appendFolderChildren (const juce::File& folder, int de
     }
 }
 
+int BandLabSoundsDrawer::maxScrollY() const
+{
+    if (rowTops.empty())
+        return 0;
+    return juce::jmax (0, rowTops.back() - juce::jmax (1, getHeight() - topBarHeight));
+}
+
+juce::Rectangle<float> BandLabSoundsDrawer::scrollTrackBounds() const
+{
+    const float trackW = 8.0f;
+    return { (float) getWidth() - trackW - 3.0f, (float) topBarHeight + 4.0f,
+             trackW, (float) juce::jmax (0, getHeight() - topBarHeight - 8) };
+}
+
+juce::Rectangle<float> BandLabSoundsDrawer::scrollThumbBounds() const
+{
+    const int maxS = maxScrollY();
+    if (maxS <= 0 || rowTops.empty())
+        return {};
+    const auto track = scrollTrackBounds();
+    const float viewH = (float) juce::jmax (1, getHeight() - topBarHeight);
+    const float totalH = (float) rowTops.back();
+    const float thumbH = juce::jlimit (28.0f, track.getHeight(), track.getHeight() * (viewH / totalH));
+    const float ratio = (float) juce::jlimit (0, maxS, scrollY) / (float) maxS;
+    const float thumbY = track.getY() + ratio * (track.getHeight() - thumbH);
+    return { track.getX(), thumbY, track.getWidth(), thumbH };
+}
+
+void BandLabSoundsDrawer::setScrollFromThumbTop (float thumbTop)
+{
+    const int maxS = maxScrollY();
+    if (maxS <= 0)
+    {
+        scrollY = 0;
+        return;
+    }
+    const auto track = scrollTrackBounds();
+    const auto thumb = scrollThumbBounds();
+    const float travel = juce::jmax (1.0f, track.getHeight() - thumb.getHeight());
+    const float norm = juce::jlimit (0.0f, 1.0f, (thumbTop - track.getY()) / travel);
+    scrollY = juce::roundToInt (norm * (float) maxS);
+}
+
 int BandLabSoundsDrawer::rowAt (int y) const
 {
     if (y < topBarHeight || rows.empty())
@@ -299,6 +342,8 @@ void BandLabSoundsDrawer::paint (juce::Graphics& g)
     g.drawText ("X", closeBtn.toNearestInt(), juce::Justification::centred, false);
 
     // List clip
+    scrollY = juce::jlimit (0, maxScrollY(), scrollY);
+    const float rightInset = maxScrollY() > 0 ? 14.0f : 0.0f;
     juce::Graphics::ScopedSaveState state (g);
     g.reduceClipRegion (0, topBarHeight, getWidth(), getHeight() - topBarHeight);
 
@@ -315,7 +360,7 @@ void BandLabSoundsDrawer::paint (juce::Graphics& g)
 
         if (item.depth == 0)
         {
-            const auto card = juce::Rectangle<float> (10.0f, (float) y + 3.0f, (float) getWidth() - 20.0f, (float) h - 6.0f);
+            const auto card = juce::Rectangle<float> (10.0f, (float) y + 3.0f, (float) getWidth() - 20.0f - rightInset, (float) h - 6.0f);
             fillRoundRect (g, card, radius::md, isHover ? colour::bg3 : colour::bg2);
 
             // Cover image (46x46)
@@ -359,7 +404,7 @@ void BandLabSoundsDrawer::paint (juce::Graphics& g)
         else
         {
             const float indent = 14.0f + (float) (item.depth - 1) * 14.0f;
-            const auto rowRect = juce::Rectangle<float> (indent, (float) y + 1.0f, (float) getWidth() - indent - 10.0f, (float) h - 2.0f);
+            const auto rowRect = juce::Rectangle<float> (indent, (float) y + 1.0f, (float) getWidth() - indent - 10.0f - rightInset, (float) h - 2.0f);
             if (isPlaying || isHover)
                 fillRoundRect (g, rowRect, radius::sm, isPlaying ? colour::accentMuted : colour::bg3);
 
@@ -389,23 +434,35 @@ void BandLabSoundsDrawer::paint (juce::Graphics& g)
             }
         }
     }
+
+    if (maxScrollY() > 0)
+    {
+        const auto track = scrollTrackBounds();
+        const auto thumb = scrollThumbBounds();
+        fillRoundRect (g, track, track.getWidth() * 0.5f, colour::bg0.withAlpha (0.55f));
+        fillRoundRect (g, thumb, thumb.getWidth() * 0.5f,
+                       (draggingScroll || hoverScroll) ? colour::textSecondary : colour::borderStrong.brighter (0.25f));
+    }
 }
 
 void BandLabSoundsDrawer::mouseMove (const juce::MouseEvent& e)
 {
-    const int r = rowAt (e.y);
-    if (r != hoverRow)
+    const bool overScroll = maxScrollY() > 0 && scrollTrackBounds().expanded (3.0f, 0.0f).contains (e.position);
+    const int r = overScroll ? -1 : rowAt (e.y);
+    if (r != hoverRow || overScroll != hoverScroll)
     {
         hoverRow = r;
+        hoverScroll = overScroll;
         repaint();
     }
 }
 
 void BandLabSoundsDrawer::mouseExit (const juce::MouseEvent&)
 {
-    if (hoverRow != -1)
+    if (hoverRow != -1 || hoverScroll)
     {
         hoverRow = -1;
+        hoverScroll = false;
         repaint();
     }
 }
@@ -414,6 +471,22 @@ void BandLabSoundsDrawer::mouseDown (const juce::MouseEvent& e)
 {
     downPos = e.getPosition();
     dragStarted = false;
+    draggingScroll = false;
+
+    if (maxScrollY() > 0 && scrollTrackBounds().expanded (3.0f, 0.0f).contains (e.position))
+    {
+        draggingScroll = true;
+        const auto thumb = scrollThumbBounds();
+        if (e.position.y >= thumb.getY() && e.position.y <= thumb.getBottom())
+            scrollDragGrabOffset = e.position.y - thumb.getY();
+        else
+        {
+            scrollDragGrabOffset = thumb.getHeight() * 0.5f;
+            setScrollFromThumbTop (e.position.y - scrollDragGrabOffset);
+        }
+        repaint();
+        return;
+    }
 
     const auto addBtn = juce::Rectangle<int> (getWidth() - 114, 12, 76, 24);
     if (addBtn.contains (e.getPosition()))
@@ -482,8 +555,24 @@ void BandLabSoundsDrawer::mouseDoubleClick (const juce::MouseEvent& e)
         onInsertSample (item.file);
 }
 
+void BandLabSoundsDrawer::mouseUp (const juce::MouseEvent&)
+{
+    if (draggingScroll)
+    {
+        draggingScroll = false;
+        repaint();
+    }
+}
+
 void BandLabSoundsDrawer::mouseDrag (const juce::MouseEvent& e)
 {
+    if (draggingScroll)
+    {
+        setScrollFromThumbTop (e.position.y - scrollDragGrabOffset);
+        repaint();
+        return;
+    }
+
     if (dragStarted || e.getPosition().getDistanceFrom (downPos) < 6)
         return;
     const int r = rowAt (downPos.y);
@@ -505,8 +594,7 @@ void BandLabSoundsDrawer::mouseWheelMove (const juce::MouseEvent&, const juce::M
 {
     if (rowTops.empty())
         return;
-    const int maxScroll = juce::jmax (0, rowTops.back() - juce::jmax (1, getHeight() - topBarHeight));
-    scrollY = juce::jlimit (0, maxScroll, scrollY - juce::roundToInt (wheel.deltaY * 72.0f));
+    scrollY = juce::jlimit (0, maxScrollY(), scrollY - juce::roundToInt (wheel.deltaY * 72.0f));
     repaint();
 }
 

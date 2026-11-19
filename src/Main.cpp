@@ -1783,7 +1783,7 @@ public:
 
     void createMainWindow()
     {
-        mainWindow = std::make_unique<MainWindow> ("LYNX SHARE", *engine); // the brand; getApplicationName() stays "LYNX" (an id: instance lock, X11 WM_CLASS, ALSA client)
+        mainWindow = std::make_unique<MainWindow> ("Bandlab:Re", *engine); // the brand; getApplicationName() stays "LYNX" (an id: instance lock, X11 WM_CLASS, ALSA client)
         lynx::setMainWindowForOwnership (mainWindow.get());
         lynx::applyRenderingChoice (*mainWindow); // (GPU rendering off: GDI; round 157a)
         lynx::startRenderingWatch();

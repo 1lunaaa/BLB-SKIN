@@ -25,6 +25,7 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent& e) override;
     void mouseDoubleClick (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseMove (const juce::MouseEvent& e) override;
@@ -65,8 +66,16 @@ private:
     std::vector<int> rowTops;
     std::map<juce::String, juce::Image> coverCache;
 
+    int maxScrollY() const;
+    juce::Rectangle<float> scrollTrackBounds() const;
+    juce::Rectangle<float> scrollThumbBounds() const;
+    void setScrollFromThumbTop (float thumbTop);
+
     int scrollY = 0;
     int hoverRow = -1;
+    bool hoverScroll = false;
+    bool draggingScroll = false;
+    float scrollDragGrabOffset = 0.0f;
     juce::File playingFile;
     bool dragStarted = false;
     juce::Point<int> downPos;

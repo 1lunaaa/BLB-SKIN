@@ -204,12 +204,15 @@ int ChannelRackComponent::shownSteps() const
 
 bool ChannelRackComponent::isShown (int row) const
 {
-    return rackfilter::shows (engine.getSong(), row, filterGroup);
+    const auto& s = engine.getSong();
+    if (customChannelFilter && row >= 0 && row < (int) s.channels.size())
+        return customChannelFilter (s.channels[(std::size_t) row]);
+    return rackfilter::shows (s, row, filterGroup);
 }
 
 int ChannelRackComponent::visibleIndex (int row) const
 {
-    if (filterGroup == rackfilter::all)
+    if (! customChannelFilter && filterGroup == rackfilter::all)
         return row;
 
     int index = 0;
@@ -384,7 +387,7 @@ int ChannelRackComponent::rowAtY (int y) const
 
     const auto index = (y - 4) / rowHeight;
 
-    if (filterGroup == rackfilter::all)
+    if (! customChannelFilter && filterGroup == rackfilter::all)
         return index;
 
     // the index-th shown row (the "add channel" row after the last one)

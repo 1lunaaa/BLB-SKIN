@@ -83,7 +83,9 @@ private:
     std::unique_ptr<juce::Component> drumRack;
     juce::Viewport drumViewport;
     juce::Rectangle<int> addDrumRowBtnBounds() const { return { 230, 8, 86, 24 }; }
+    juce::Rectangle<int> newDrumPatternBtnBounds() const { return { 324, 8, 24, 24 }; }
     bool hoverAddDrumRow = false;
+    bool hoverNewDrumPat = false;
 
     int hoverSlot = -1;
     bool hoverAdd = false;

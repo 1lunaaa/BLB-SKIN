@@ -152,6 +152,7 @@ public:
     void groupSelected (); // "Group selected..." (Alt+G): the selected channels go into a new, named group
     void moveSelectedToGroup (int group); // -1 = no group
     bool isShown (int row) const;          // not hidden by the filter
+    std::function<bool (const ChannelDef&)> customChannelFilter;
     std::function<void()> onFilterChanged; // the title shows the filter's name and the graph editor's state
 
     static constexpr int rowHeight = 30;

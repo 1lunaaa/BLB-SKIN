@@ -2988,6 +2988,25 @@ Clip PlaylistComponent::makeBrushClip (int track, std::int64_t start) const
     c.start = juce::jmax<std::int64_t> (0, start);
     c.length = song.patterns[(std::size_t) song.currentPattern].effectiveLength (song.beatsPerBar);
 
+    if (brush.templateClip.has_value() && brush.templateClip->kind == brush.kind)
+    {
+        const auto& tpl = *brush.templateClip;
+        const bool matches = (tpl.kind == ClipKind::pattern && tpl.pattern == song.currentPattern)
+                          || (tpl.kind == ClipKind::audio && tpl.channel == brush.index && brush.index >= 0 && brush.index < (int) song.channels.size())
+                          || (tpl.kind == ClipKind::automation && tpl.automation == brush.index && brush.index >= 0 && brush.index < (int) song.automations.size());
+        if (matches)
+        {
+            c = tpl;
+            c.track = track;
+            c.start = juce::jmax<std::int64_t> (0, start);
+            c.uid = 0;
+            c.crossfadeIn = 0;
+            c.crossfadeOut = 0;
+            c.gridSlot = -1;
+            return c;
+        }
+    }
+
     if (brush.kind == ClipKind::audio && brush.index >= 0 && brush.index < (int) song.channels.size()
         && song.channels[(std::size_t) brush.index].instrument == InstrumentKind::audioClip)
     {
@@ -3857,20 +3876,25 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
         if (c.kind == ClipKind::pattern)
         {
             brush = {};
+            brush.templateClip = c;
             if (c.pattern != engine.getSong().currentPattern)
                 engine.editSong ([p = c.pattern] (Song& s) { s.currentPattern = p; }, false);
         }
         else if (c.kind == ClipKind::audio)
         {
+            brush = {};
             brush.kind = ClipKind::audio;
             brush.index = c.channel;
+            brush.templateClip = c;
             engine.setSelectedChannel (c.channel);
             engine.sendChangeMessage();
         }
         else if (c.kind == ClipKind::automation)
         {
+            brush = {};
             brush.kind = ClipKind::automation;
             brush.index = c.automation;
+            brush.templateClip = c;
             engine.sendChangeMessage();
         }
         return;
@@ -3879,14 +3903,34 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
     // paints what is chosen in the Picker (the current pattern, an audio clip or an automation clip)
     setSelection ({});
     // an instrument track places its own pattern (FL: named after the channel, made on the first click; round 151)
-    if (const auto track = yToTrack (e.y); brush.kind == ClipKind::pattern && track >= 0 && track < (int) engine.getSong().playlistTracks.size()
-                                           && engine.getSong().playlistTracks[(std::size_t) track].mode == PlaylistTrackMode::instrument)
+    if (const auto track = yToTrack (e.y); track >= 0 && track < (int) engine.getSong().playlistTracks.size())
     {
-        engine.editSong ([track] (Song& s) {
-            if (const auto p = trackmodes::instrumentTrackPattern (s, track); p >= 0)
-                s.currentPattern = p;
-        });
-        engine.setSelectedChannel (engine.getSong().playlistTracks[(std::size_t) track].channel); // its piano roll is the channel's
+        const auto& pt = engine.getSong().playlistTracks[(std::size_t) track];
+        const bool isDrumTrack = (pt.name == "Caja de ritmos" || pt.name == "Ritmos");
+        if (isDrumTrack)
+            brush = {};
+
+        if (pt.mode == PlaylistTrackMode::instrument && (brush.kind == ClipKind::pattern || isDrumTrack))
+        {
+            engine.editSong ([track, isDrumTrack] (Song& s) {
+                bool keepCurrentDrumPat = false;
+                if (isDrumTrack && s.currentPattern >= 0 && s.currentPattern < (int) s.patterns.size())
+                {
+                    const auto& curName = s.patterns[(std::size_t) s.currentPattern].name;
+                    keepCurrentDrumPat = (curName.rfind ("Caja de ritmos", 0) == 0 || curName.rfind ("Ritmos", 0) == 0);
+                }
+                if (! keepCurrentDrumPat)
+                {
+                    if (const auto p = trackmodes::instrumentTrackPattern (s, track); p >= 0)
+                    {
+                        if (isDrumTrack && p < (int) s.patterns.size() && s.patterns[(std::size_t) p].name == "Kick")
+                            s.patterns[(std::size_t) p].name = "Caja de ritmos";
+                        s.currentPattern = p;
+                    }
+                }
+            });
+            engine.setSelectedChannel (engine.getSong().playlistTracks[(std::size_t) track].channel); // its piano roll is the channel's
+        }
     }
 
     auto c = makeBrushClip (yToTrack (e.y), snap (xToTick (e.x), snapOn));
@@ -7452,7 +7496,8 @@ void PlaylistComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     if (engine.getSong().currentPattern != knownCurrentPattern)
     {
         knownCurrentPattern = engine.getSong().currentPattern;
-        brush = {};
+        if (! brush.templateClip.has_value() || brush.templateClip->kind != ClipKind::pattern || brush.templateClip->pattern != knownCurrentPattern)
+            brush = {};
     }
 
     followButton.setToggleState (EditorGlobals::get().isFollowing (false), juce::dontSendNotification);
@@ -8222,7 +8267,21 @@ public:
         : onSelect (std::move (onSelectFn))
     {
         setOpaque (false);
+        setWantsKeyboardFocus (true);
         setSize (310, 316);
+        juce::Component::SafePointer<BandLabNewTrackPopup> safe (this);
+        juce::MessageManager::callAsync ([safe] {
+            if (safe != nullptr)
+            {
+                juce::Desktop::getInstance().addGlobalMouseListener (safe.getComponent());
+                safe->grabKeyboardFocus();
+            }
+        });
+    }
+
+    ~BandLabNewTrackPopup() override
+    {
+        juce::Desktop::getInstance().removeGlobalMouseListener (this);
     }
 
     void paint (juce::Graphics& g) override
@@ -8340,6 +8399,11 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (e.eventComponent != this && ! isParentOf (e.eventComponent))
+        {
+            dismiss();
+            return;
+        }
         const int idx = indexAt (e.getPosition());
         if (idx >= 0)
         {
@@ -8452,6 +8516,7 @@ void PlaylistComponent::addBandLabTrack (int kind)
         else if (kind == 2)
         {
             pt.mode = PlaylistTrackMode::instrument;
+            pt.lockedToContent = true;
             pt.name = "Caja de ritmos";
             const char* defaultPads[] { "Kick", "Clap / Snare", "Hi-Hat", "Open Hat" };
             const std::uint32_t padColours[] { 0xfff59e0b, 0xff00c4b4, 0xffa855f7, 0xff3d8bfd };

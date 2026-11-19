@@ -366,6 +366,18 @@ MainComponent::MainComponent (AudioEngine& e, bool restoreUserSettings)
     patternMenuButton.setTooltip (tr ("Pattern: rename, color, clone, insert, split, length, delete"));
     patternMenuButton.onClick = [this] { showPatternMenu(); };
 
+    projectNameEditor.setJustification (juce::Justification::centred);
+    projectNameEditor.setFont (theme::font (theme::type::body, true));
+    projectNameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff191b1e));
+    projectNameEditor.setColour (juce::TextEditor::textColourId, theme::colour::textPrimary);
+    projectNameEditor.setColour (juce::TextEditor::outlineColourId, theme::colour::accent);
+    projectNameEditor.setColour (juce::TextEditor::focusedOutlineColourId, theme::colour::accent);
+    projectNameEditor.setTextToShowWhenEmpty (tr ("Nuevo proyecto"), theme::colour::textDisabled);
+    projectNameEditor.onReturnKey = [this] { commitProjectNameEdit (true); };
+    projectNameEditor.onEscapeKey = [this] { commitProjectNameEdit (false); };
+    projectNameEditor.onFocusLost = [this] { commitProjectNameEdit (true); };
+    addChildComponent (projectNameEditor);
+
 
     // the workspace panels
     rack.onOpenPianoRoll = [this] { openPianoRoll(); };
@@ -387,7 +399,6 @@ MainComponent::MainComponent (AudioEngine& e, bool restoreUserSettings)
     playlistArea.onOpenEffects = [this] { showPanel (Panel::mixer); };
     playlistArea.onOpenEditor = [this] { openPianoRoll(); };
     playlistArea.onOpenSlotEditor = [this] (int trackIdx, int slotIdx) {
-        showPanel (Panel::mixer);
         mixer.openSlotEditor (trackIdx, slotIdx);
     };
     workspace.setContent (Panel::playlist, playlistArea, "Playlist", Icon::playlist);
@@ -507,7 +518,18 @@ MainComponent::MainComponent (AudioEngine& e, bool restoreUserSettings)
     workspace.onDefaultLayout = [this] { fitChannelRack (true); };
     workspace.setPersistent (persistent);
     playlist.onOpenPattern = [this] { showPanel (Panel::channelRack); };
-    playlist.onOpenPlugin = [this] (int channel) { rack.openPluginWindow (channel); };
+    playlist.onOpenPlugin = [this] (int channel) {
+        const auto& channels = engine.getSong().channels;
+        if (channel >= 0 && channel < (int) channels.size()
+            && channels[(std::size_t) channel].instrument == InstrumentKind::plugin)
+        {
+            rack.openPluginWindow (channel);
+            return;
+        }
+        pendingInstrumentChannel = channel;
+        if (pluginPickerView == nullptr)
+            togglePluginPicker();
+    };
     playlist.onOpenMixerTrack = [this] (int insert) { // double-click on an empty audio track
         showPanel (Panel::mixer);
         mixer.selectTrack (insert);
@@ -823,12 +845,24 @@ void MainComponent::paint (juce::Graphics& g)
     g.setFont (font (type::title, true));
     g.drawText ("BandLab", 64, 7, 96, 24, juce::Justification::centredLeft, false);
 
-    // Nombre del proyecto centrado en Fila 1
-    const auto name = (engine.isModified() ? juce::String ("* ") : juce::String())
-                      + (projectName.isNotEmpty() ? projectName : tr ("Nuevo proyecto"));
-    g.setFont (font (type::body, true));
-    g.setColour (colour::textPrimary);
-    g.drawText (name, 180, 7, juce::jmax (80, getWidth() - 390), 24, juce::Justification::centred, true);
+    // Nombre del proyecto centrado en Fila 1 (editable al hacer clic)
+    if (! projectNameEditor.isVisible())
+    {
+        const auto titleR = projectTitleBounds();
+        const auto name = (engine.isModified() ? juce::String ("* ") : juce::String())
+                          + (projectName.isNotEmpty() ? projectName : tr ("Nuevo proyecto"));
+        g.setFont (font (type::body, true));
+        if (hoverProjectTitle)
+        {
+            const int pillW = juce::jlimit (120, titleR.getWidth(), g.getCurrentFont().getStringWidth (name) + 28);
+            const auto pill = titleR.withSizeKeepingCentre (pillW, 22).toFloat();
+            fillRoundRect (g, pill, 11.0f, juce::Colour (0xff1e2126));
+            g.setColour (colour::borderStrong);
+            g.drawRoundedRectangle (pill.reduced (0.5f), 11.0f, 1.0f);
+        }
+        g.setColour (colour::textPrimary);
+        g.drawText (name, titleR, juce::Justification::centred, true);
+    }
 
     // Capsula pill de Metronomo + BPM + Compas (4/4) en Fila 2
     if (! snapLabelArea.isEmpty())
@@ -895,6 +929,30 @@ void MainComponent::paint (juce::Graphics& g)
             g.drawVerticalLine (juce::roundToInt (sx), tf.getY() + 1.0f, tf.getBottom() - 1.0f);
     }
 
+    // Boton pill chiquito "Rack" sin icono a la izquierda de "Mixer" en Fila 2
+    {
+        const auto rackBtn = rackPillBounds().toFloat();
+        const bool rackOpen = workspace.isPanelVisible (Panel::channelRack);
+        fillRoundRect (g, rackBtn, rackBtn.getHeight() * 0.5f, rackOpen ? colour::bg4 : juce::Colour (0xff191b1e));
+        g.setColour (rackOpen ? colour::borderStrong : juce::Colour (0xff070709));
+        g.drawRoundedRectangle (rackBtn.reduced (0.5f), rackBtn.getHeight() * 0.5f, 1.0f);
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::caption, true));
+        g.drawText (tr ("Rack"), rackBtn.toNearestInt(), juce::Justification::centred, false);
+    }
+
+    // Boton pill chiquito "Mixer" sin icono al lado de "Masterizando" en Fila 2
+    {
+        const auto mixBtn = mixerPillBounds().toFloat();
+        const bool mixOpen = workspace.isPanelVisible (Panel::mixer);
+        fillRoundRect (g, mixBtn, mixBtn.getHeight() * 0.5f, mixOpen ? colour::bg4 : juce::Colour (0xff191b1e));
+        g.setColour (mixOpen ? colour::borderStrong : juce::Colour (0xff070709));
+        g.drawRoundedRectangle (mixBtn.reduced (0.5f), mixBtn.getHeight() * 0.5f, 1.0f);
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::caption, true));
+        g.drawText (tr ("Mixer"), mixBtn.toNearestInt(), juce::Justification::centred, false);
+    }
+
     // Boton pill "Masterizando" a la derecha de Fila 2
     {
         const auto mBtn = masterPillBounds().toFloat();
@@ -941,6 +999,11 @@ void MainComponent::resized()
     // --- Fila 1 (y = 5..33): Guardar y Exportar a la derecha ---
     put (exportButton, { getWidth() - 42, 5, 30, 28 });
     put (saveButton,   { getWidth() - 78, 5, 30, 28 });
+    if (projectNameEditor.isVisible())
+    {
+        const auto titleR = projectTitleBounds();
+        projectNameEditor.setBounds (titleR.withSizeKeepingCentre (juce::jmin (300, titleR.getWidth()), 24));
+    }
 
     // --- Fila 2 (y = 42..70): Deshacer, Rehacer, Teclado MIDI ---
     put (undoButton,        { 12, 42, 28, 28 });
@@ -1227,11 +1290,59 @@ void MainComponent::showAppMenu()
     root.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (appMenuBtnBounds())));
 }
 
+void MainComponent::startEditingProjectName()
+{
+    if (projectNameEditor.isVisible())
+        return;
+    const auto titleR = projectTitleBounds();
+    projectNameEditor.setText (projectName, juce::dontSendNotification);
+    projectNameEditor.setBounds (titleR.withSizeKeepingCentre (juce::jmin (300, titleR.getWidth()), 24));
+    projectNameEditor.setVisible (true);
+    projectNameEditor.toFront (true);
+    projectNameEditor.grabKeyboardFocus();
+    projectNameEditor.selectAll();
+    repaint (titleR);
+}
+
+void MainComponent::commitProjectNameEdit (bool applyChange)
+{
+    if (! projectNameEditor.isVisible())
+        return;
+    const auto newName = projectNameEditor.getText().trim();
+    projectNameEditor.setVisible (false);
+    if (applyChange && newName != projectName)
+    {
+        projectName = newName;
+        engine.editSong ([newName] (Song& s) {
+            s.info.title = newName.toStdString();
+        });
+        updateTitle();
+    }
+    repaint (projectTitleBounds());
+}
+
 void MainComponent::mouseDown (const juce::MouseEvent& e)
 {
+    if (projectTitleBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
+    {
+        startEditingProjectName();
+        return;
+    }
     if (appMenuBtnBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
     {
         showAppMenu();
+        return;
+    }
+    if (rackPillBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
+    {
+        togglePanel (Panel::channelRack);
+        repaint (rackPillBounds());
+        return;
+    }
+    if (mixerPillBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
+    {
+        togglePanel (Panel::mixer);
+        repaint (mixerPillBounds());
         return;
     }
     if (masterPillBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
@@ -1679,7 +1790,6 @@ void MainComponent::connectBrowser (BrowserComponent& b)
         rack.toggleEditor (channel, true);
     };
     b.onOpenEffect = [this] (int track, int slot) {
-        showPanel (Panel::mixer);
         mixer.openSlotEditor (track, slot);
     };
     b.onShowInsert = [this] (int track) {
@@ -1692,7 +1802,6 @@ void MainComponent::connectBrowser (BrowserComponent& b)
         if (PatcherWindows::takeInstrumentFromBrowser (c)) // a Patcher's Add plugin › Browse plugin database (round 162)
             return;
         rack.addChannel (std::move (c), true, resolveInstrumentInsert());
-        showPanel (Panel::channelRack);
     };
     b.onAddEffect = [this] (EffectSlot slot) {
         if (PatcherWindows::takeEffectFromBrowser (slot))
@@ -1700,8 +1809,6 @@ void MainComponent::connectBrowser (BrowserComponent& b)
         if (! mixer.addEffectToSelected (std::move (slot)))
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, tr ("Plugin database"),
                                                     tr ("The selected insert has no free effect slot."));
-        else
-            showPanel (Panel::mixer);
     };
     b.onPreviewVolumeChanged = [this] { saveUiSettings(); };
     b.onSendToPlaylist = [this] (const juce::File& file) {
@@ -2611,8 +2718,28 @@ void MainComponent::togglePluginPicker()
     targets.addInstrument = [safe] (ChannelDef c) {
         if (safe == nullptr)
             return;
+        const int targetCh = safe->pendingInstrumentChannel;
+        safe->pendingInstrumentChannel = -1;
+        if (targetCh >= 0 && targetCh < (int) safe->engine.getSong().channels.size())
+        {
+            const auto kind = c.instrument;
+            safe->engine.editSong ([targetCh, c] (Song& s) mutable {
+                if (targetCh < 0 || targetCh >= (int) s.channels.size())
+                    return;
+                c.mixerTrack = s.channels[(std::size_t) targetCh].mixerTrack;
+                if (c.colour == 0)
+                    c.colour = s.channels[(std::size_t) targetCh].colour;
+                s.channels[(std::size_t) targetCh] = c;
+                for (auto& pt : s.playlistTracks)
+                    if (pt.mode == PlaylistTrackMode::instrument && pt.channel == targetCh && pt.name == "Instrumento")
+                        pt.name = c.name;
+            });
+            safe->engine.setSelectedChannel (targetCh);
+            if (kind == InstrumentKind::plugin)
+                safe->rack.openPluginWindow (targetCh);
+            return;
+        }
         safe->rack.addChannel (std::move (c), true, safe->resolveInstrumentInsert());
-        safe->showPanel (Panel::channelRack);
     };
     targets.addEffect = [safe] (EffectSlot slot) {
         if (safe == nullptr)
@@ -2621,16 +2748,19 @@ void MainComponent::togglePluginPicker()
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, tr ("Plugin picker"), tr ("The selected insert has no free effect slot."));
         else
         {
-            safe->showPanel (Panel::mixer);
-            // FL opens the new effect's window (round 171c, its "insert effect plugin")
+            // Opens the new effect's window directly without popping up the Mixer
             const auto track = safe->mixer.getSelectedTrack();
             if (track >= 0 && track < (int) safe->engine.getSong().mixer.size())
                 safe->mixer.openSlotEditor (track, (int) safe->engine.getSong().mixer[(std::size_t) track].effects.size() - 1);
         }
     };
     targets.close = [safe] {
-        if (safe != nullptr && safe->pluginPickerView != nullptr)
-            safe->togglePluginPicker();
+        if (safe != nullptr)
+        {
+            safe->pendingInstrumentChannel = -1;
+            if (safe->pluginPickerView != nullptr)
+                safe->togglePluginPicker();
+        }
     };
     targets.showMixer = [safe] { // (an effect dragged out of the picker: FL brings up the Mixer)
         if (safe != nullptr)
@@ -2677,14 +2807,11 @@ void MainComponent::showQuickAdd()
     targets.effectsFirst = workspace.getFocused() == Panel::mixer;
     targets.addInstrument = [this] (ChannelDef c) {
         rack.addChannel (std::move (c), true, resolveInstrumentInsert());
-        showPanel (Panel::channelRack);
     };
     targets.addEffect = [this] (EffectSlot slot) {
         if (! mixer.addEffectToSelected (std::move (slot)))
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, tr ("Quick-add palette"),
                                                     tr ("The selected insert has no free effect slot."));
-        else
-            showPanel (Panel::mixer);
     };
     openToolWindow (makeQuickAddPalette (engine, std::move (targets)), tr ("Quick-add palette"), "quickadd");
 }
@@ -4472,7 +4599,7 @@ void MainComponent::updateTitle()
             liveState = " [" + (st == S::live ? tr ("LIVE") : st == S::reconnecting ? tr ("Reconnecting...") : st == S::waitingHost ? tr ("Waiting for the host...") : tr ("Connecting...")) + "]";
         }
         window->setName ((engine.isModified() ? "* " : "")
-                         + (projectName.isNotEmpty() ? "LYNX SHARE - " + projectName : juce::String ("LYNX SHARE")) + importedSuffix + liveState);
+                         + (projectName.isNotEmpty() ? "Bandlab:Re - " + projectName : juce::String ("Bandlab:Re")) + importedSuffix + liveState);
     }
 }
 
@@ -4722,7 +4849,9 @@ void MainComponent::saveNewVersion()
     engine.markSaved();
     rememberRecent (file);
     currentFile = file;
-    projectName = file.getFileNameWithoutExtension();
+    projectName = ! engine.getSong().info.title.empty()
+                      ? juce::String::fromUTF8 (engine.getSong().info.title.c_str())
+                      : file.getFileNameWithoutExtension();
     importedSuffix = {};
     updateTitle();
     ui::postHint ({ tr ("Saved as a new version: {0}", { file.getFileName() }), {}, false, false }, 5000);

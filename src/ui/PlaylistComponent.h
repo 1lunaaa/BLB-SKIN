@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 
 #include <functional>
 #include <map>
@@ -67,6 +68,7 @@ public:
     {
         ClipKind kind = ClipKind::pattern;
         int index = -1; // audio or automation channel; for patterns the current pattern is used
+        std::optional<Clip> templateClip;
     };
     Brush brush;
     int knownCurrentPattern = -1;

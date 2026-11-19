@@ -237,6 +237,12 @@ void BandLabFxDrawer::setMode (Mode newMode)
         if (drumRack == nullptr)
         {
             auto rack = std::make_unique<ChannelRackComponent> (engine);
+            rack->customChannelFilter = [this] (const ChannelDef& ch) -> bool {
+                if (ch.instrument == InstrumentKind::audioClip)
+                    return false;
+                const int targetInsert = juce::jlimit (1, maxMixerTracks - 1, track > 0 ? track : 1);
+                return ch.mixerTrack == targetInsert;
+            };
             drumRack = std::move (rack);
             drumViewport.setViewedComponent (drumRack.get(), false);
         }
@@ -326,6 +332,12 @@ void BandLabFxDrawer::resized()
         if (drumRack == nullptr)
         {
             auto rack = std::make_unique<ChannelRackComponent> (engine);
+            rack->customChannelFilter = [this] (const ChannelDef& ch) -> bool {
+                if (ch.instrument == InstrumentKind::audioClip)
+                    return false;
+                const int targetInsert = juce::jlimit (1, maxMixerTracks - 1, track > 0 ? track : 1);
+                return ch.mixerTrack == targetInsert;
+            };
             drumRack = std::move (rack);
             drumViewport.setViewedComponent (drumRack.get(), false);
         }
@@ -408,10 +420,18 @@ void BandLabFxDrawer::paint (juce::Graphics& g)
         g.setFont (font (type::caption, true));
         g.drawText (tr ("+ Fila"), addRowR.toNearestInt(), juce::Justification::centred, false);
 
+        const auto newPatR = newDrumPatternBtnBounds().toFloat();
+        fillRoundRect (g, newPatR, newPatR.getHeight() * 0.5f, hoverNewDrumPat ? colour::bg4 : colour::bg3);
+        g.setColour (colour::borderStrong);
+        g.drawRoundedRectangle (newPatR.reduced (0.5f), newPatR.getHeight() * 0.5f, 1.0f);
+        g.setColour (colour::textPrimary);
+        g.setFont (font (type::body, true));
+        g.drawText ("+", newPatR.toNearestInt(), juce::Justification::centred, false);
+
         g.setColour (colour::textSecondary);
         g.setFont (font (type::caption, false));
         g.drawText (tr ("Arrastra samples (.wav / .mp3) sobre una fila para armar hi-hats, claps o kicks"),
-                    addRowR.getRight() + 14, 8, juce::jmax (120, getWidth() - 136 - (int) addRowR.getRight() - 24), 22,
+                    newPatR.getRight() + 14, 8, juce::jmax (120, getWidth() - 136 - (int) newPatR.getRight() - 24), 22,
                     juce::Justification::centredLeft, true);
     }
 
@@ -809,9 +829,11 @@ void BandLabFxDrawer::mouseMove (const juce::MouseEvent& e)
     const bool hv = vstCardBounds().contains (e.getPosition());
     const bool hc = closeBtnBounds().contains (e.getPosition());
     const bool hadr = (mode == Mode::drumMachine) && addDrumRowBtnBounds().contains (e.getPosition());
-    if (hadr != hoverAddDrumRow)
+    const bool hndp = (mode == Mode::drumMachine) && newDrumPatternBtnBounds().contains (e.getPosition());
+    if (hadr != hoverAddDrumRow || hndp != hoverNewDrumPat)
     {
         hoverAddDrumRow = hadr;
+        hoverNewDrumPat = hndp;
         repaint();
     }
     int hip = 0;
@@ -838,6 +860,8 @@ void BandLabFxDrawer::mouseExit (const juce::MouseEvent&)
     hoverAdd = false;
     hoverVst = false;
     hoverClose = false;
+    hoverAddDrumRow = false;
+    hoverNewDrumPat = false;
     hoverInputPart = 0;
     repaint();
 }
@@ -851,6 +875,45 @@ void BandLabFxDrawer::mouseDown (const juce::MouseEvent& e)
     {
         if (onClose)
             onClose();
+        return;
+    }
+
+    if (mode == Mode::drumMachine && newDrumPatternBtnBounds().contains (e.getPosition()))
+    {
+        engine.editSong ([this] (Song& s) {
+            int drumPatCount = 0;
+            for (const auto& pat : s.patterns)
+                if (pat.name.rfind ("Caja de ritmos", 0) == 0 || pat.name.rfind ("Ritmos", 0) == 0)
+                    ++drumPatCount;
+
+            Pattern pat;
+            pat.name = "Caja de ritmos " + std::to_string (drumPatCount + 1);
+            const int patIdx = (int) s.patterns.size();
+            s.patterns.push_back (std::move (pat));
+            s.currentPattern = patIdx;
+
+            const int plIdx = track - 1;
+            if (plIdx >= 0 && plIdx < (int) s.playlistTracks.size())
+            {
+                std::int64_t nextStart = 0;
+                for (const auto& c : s.playlist)
+                    if (c.track == plIdx)
+                        nextStart = std::max<std::int64_t> (nextStart, c.end());
+
+                Clip clip;
+                clip.kind = ClipKind::pattern;
+                clip.pattern = patIdx;
+                clip.track = plIdx;
+                clip.start = nextStart;
+                clip.length = s.patterns[(std::size_t) patIdx].effectiveLength (s.beatsPerBar);
+                s.playlist.push_back (clip);
+                s.mode = PlayMode::song;
+            }
+        });
+        if (auto* r = dynamic_cast<ChannelRackComponent*> (drumRack.get()))
+            r->updateSize();
+        resized();
+        repaint();
         return;
     }
 

@@ -342,6 +342,8 @@ private:
 
     void showAppMenu();
     juce::Rectangle<int> appMenuBtnBounds() const { return { 10, 6, 30, 28 }; }
+    juce::Rectangle<int> rackPillBounds() const { return { getWidth() - 266, 42, 60, 28 }; }
+    juce::Rectangle<int> mixerPillBounds() const { return { getWidth() - 200, 42, 60, 28 }; }
     juce::Rectangle<int> masterPillBounds() const { return { getWidth() - 134, 42, 122, 28 }; }
     juce::Rectangle<int> timeSigBounds() const;
     IconButton newButton { "new", Icon::newFile }, openButton { "open", Icon::open }, saveButton { "save", Icon::save },
@@ -584,7 +586,14 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File currentFile;
     juce::File importedFlpFile; // the .flp the current project was imported from (until another project is opened)
+    juce::Rectangle<int> projectTitleBounds() const { return { 180, 7, juce::jmax (80, getWidth() - 390), 24 }; }
+    void startEditingProjectName();
+    void commitProjectNameEdit (bool applyChange);
+
+    juce::TextEditor projectNameEditor;
+    bool hoverProjectTitle = false;
     juce::String importedSuffix; // " (imported from FL Studio)" in the title until saved as .lynx
+    int pendingInstrumentChannel = -1;
     juce::String projectName; // suggested name for export (also from an imported .flp)
     HeldNotes heldKeys; // notes the typing piano is playing (tag: the key code)
     // Online Sessions P2 (round 169b): the live session (last: it ends, and tells the others, before anything goes)
