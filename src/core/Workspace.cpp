@@ -55,43 +55,22 @@ Layout Layout::makeDefault (int width, int height)
         return p;
     };
 
-    const auto browserWidth = std::clamp (w * 17 / 100, minWidth, 260);
-    l[Panel::browser] = state ({ 0, 0, browserWidth, h }, false);
-    l[Panel::playlist] = state ({ 0, 0, w, h }, true);
-    l[Panel::playlist].maximised = true;
+    auto pct = [w, h] (double xf, double yf, double wf, double hf) -> Rect {
+        return { (int) std::lround (xf * w), (int) std::lround (yf * h),
+                 (int) std::lround (wf * w), (int) std::lround (hf * h) };
+    };
 
-    // The Channel Rack floats over the Playlist (FL's View › Arrange windows › Desktop (default): the Browser at the
-    // left, the Playlist filling the rest, the rack a window above it; UI fits its size to the rows afterwards),
-    // below the Playlist's toolbar row and to the right of its pattern picker and track names, so the arrangement
-    // stays readable. On a small desktop (a laptop at 125/150 % scaling) it gets narrower (its steps scroll) rather
-    // than covering the track names and the whole arrangement (round 167v); only when even rackMinWidth does not fit
-    // there does it move left over the track names.
-    const auto gap = 16;
-    const auto besideHeaders = w - gap - (browserWidth + playlistHeaderWidth);
-    const auto rackWidth = besideHeaders >= rackMinWidth ? std::min (besideHeaders, rackMaxWidth)
-                                                         : std::min (w - browserWidth - 2 * gap, rackMinWidth);
-    const auto rackHeight = std::min (h - 2 * gap, std::max (240, h * 55 / 100));
-    const auto rackTop = std::min (40, h / 10);
-    const auto rackLeft = std::max (browserWidth + gap, std::min (browserWidth + playlistHeaderWidth, w - gap - rackWidth));
-    l[Panel::channelRack] = state ({ rackLeft, rackTop, rackWidth, std::min (rackHeight, h - rackTop - gap) }, false);
-
-    // Hidden until called (F7, F9), with rects that tile when both are shown on a tall enough desktop: the
-    // Mixer along the bottom, the Piano Roll above it. On a short desktop the Piano Roll keeps a usable height
-    // and overlaps the Mixer, as floating windows do.
-    const auto mixerHeight = std::min (h - 2 * gap, std::max (mixerMinHeight, h * 45 / 100));
-    const auto mixerTop = h - mixerHeight - gap / 2;
-    l[Panel::mixer] = state ({ browserWidth + gap / 2, mixerTop, w - browserWidth - gap, mixerHeight }, false);
-
-    const auto rollTop = 2 * gap;
-    const auto tiledRoll = mixerTop - gap / 2 - rollTop;
-    const auto rollHeight = tiledRoll >= pianoRollMinHeight ? tiledRoll : std::max (minHeight, h * 58 / 100);
-    l[Panel::pianoRoll] = state ({ browserWidth + 2 * gap, rollTop, w - browserWidth - 4 * gap, rollHeight }, false);
+    l[Panel::playlist] = state (pct (0.0, 0.0, 1.0, 1.0), true);
+    l[Panel::channelRack] = state (pct (0.45948, 0.0, 0.48538, 0.36055), true);
+    l[Panel::pianoRoll] = state (pct (0.0, 0.02465, 1.0, 0.90139), false);
+    l[Panel::mixer] = state (pct (0.10025, 0.18490, 0.80201, 0.81510), true);
+    l[Panel::browser] = state (pct (0.0, 0.0, 0.27736, 1.0), true);
 
     for (auto& p : l.panels)
         p.bounds = clampInto (p.bounds, w, h);
 
-    l.order = { Panel::playlist, Panel::browser, Panel::mixer, Panel::pianoRoll, Panel::channelRack };
-    l.focused = Panel::channelRack;
+    l.order = { Panel::channelRack, Panel::browser, Panel::mixer, Panel::playlist, Panel::pianoRoll };
+    l.focused = Panel::playlist;
     return l;
 }
 

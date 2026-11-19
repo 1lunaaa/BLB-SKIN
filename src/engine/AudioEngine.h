@@ -168,9 +168,9 @@ public:
         std::int64_t quantise = 0;      // record quantise in ticks (<= 1: as played); follows the global grid
         bool placeSongClip = true;      // song mode: a take puts a clip of the pattern where recording started
         // recording filter (FL's record button right-click, REA_rodada88): what a take records
-        bool recordNotes = true;        // notes played (MIDI and PC keyboard)
+        bool recordNotes = false;        // notes played (MIDI and PC keyboard)
         bool recordAudio = true;        // audio of the armed inserts' inputs
-        bool askWhatToRecord = true;    // the record button asks first ("What would you like to record?")
+        bool askWhatToRecord = false;    // the record button asks first ("What would you like to record?")
         // FL's record menu "Options" (REA round 134): arming recording also starts playback
         bool startsPlayback = false;
         // LYNX's own "Disarm the inserts when recording stops" (record menu and Mixer › Disk recording; issue #16): the
@@ -197,7 +197,7 @@ public:
         bool recordingMarkers = false;
         // FL's recording filter "Automation" (REA round 143): moved parameters become automation (song mode: automation
         // clips; pattern mode: the pattern's events); Quantize › "Automations" puts their points on the snap
-        bool recordAutomation = true;
+        bool recordAutomation = false;
         // FL's recording filter "Clips" (REA round 146 B5, round 165m): Performance mode's launched clips are written
         // into the arrangement where they played
         bool recordClips = true;
@@ -366,8 +366,8 @@ public:
     struct RecordingSettings
     {
         takes::SampleFormat format = takes::SampleFormat::pcm24; // 24-bit or 32-bit float WAV; the device's rate
-        bool trackTakeNames = true;  // "<Insert>_Take<N>.wav" (off: FL's "<project>_<date time>_<insert>.wav")
-        int manualOffset = 0;        // samples added to the compensation (negative: earlier)
+        bool trackTakeNames = false;  // "<Insert>_Take<N>.wav" (off: FL's "<project>_<date time>_<insert>.wav")
+        int manualOffset = -4;        // samples added to the compensation (negative: earlier)
         bool useMeasured = true;     // a ping measured for this device setup replaces the driver's figures
         std::map<std::string, int> measured; // setupKey -> round trip (samples)
         int pingOutput = 0, pingInput = 0;   // device channels the ping uses (output pair's first, input)
@@ -822,7 +822,7 @@ private:
     std::uint64_t loggedOver = 0, loggedLate = 0;
     double lastLogMs = 0.0;
     class PreviewPlayer* preview = nullptr; // graph node (owned by the graph)
-    double previewVolume = 1.0;
+    double previewVolume = 0.52;
     double editorVolume = 1.0;
     void publishSong();
     void adoptPrepared (PreparedFlp& prepared); // the plugins of a prepared import found / substituted (message thread)

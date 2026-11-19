@@ -86,7 +86,7 @@ juce::Colour accentForInstrument (const juce::String& name)
 
 namespace
 {
-bool reduced = false;
+bool reduced = true;
 Style currentStyle = Style::glow;
 Art currentArt = Art::none;
 bool motion = true;

@@ -178,7 +178,7 @@ private:
     keys::KeyMap keyMap;
     // On by default, as FL 2026 (OptionsTypingKbToPianoAction: Checked = True; measured round 168t2). While it is on, FL
     // too takes the plain letter keys for the piano: P / E / R played notes and K (next channel) did nothing.
-    bool typingPiano = true;
+    bool typingPiano = false;
     int typingOctave = keys::typingpiano::defaultOctave, typingRoot = 0; // the button's right-click menu, as FL's
     int typingLayout = keys::typingpiano::pianoLayout();
     // the typing keyboard's notes launching performance clips (FL: they are MIDI channel 1, see keyPressed): its own
@@ -323,7 +323,7 @@ private:
     juce::File sessionMarker;
     int autosaveTicks = 0;
     std::shared_ptr<std::atomic<bool>> autosaveRunning = std::make_shared<std::atomic<bool>> (false); // the backup file is being written
-    int autosaveMinutes = 2, autosaveKeep = 10; // Settings › General › Backup
+    int autosaveMinutes = 30, autosaveKeep = 10; // Settings › General › Backup
     bool backupWaitsForQuiet = true;              // (round 177d) also while playing / right after MIDI input
     int backupLongestWaitMinutes = prefs::defaultBackupLongestWaitMinutes; // ...but a backup is written after this long
     bool hoverValues = false;                     // (round 177d) the hovered control's value next to the mouse

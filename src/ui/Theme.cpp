@@ -816,7 +816,7 @@ namespace menus
 {
 namespace
 {
-bool compactMenus = true;
+bool compactMenus = false;
 }
 void setCompact (bool c) { compactMenus = c; }
 bool compact() { return compactMenus; }

@@ -17,8 +17,8 @@ class AudioEngine;
 struct GeneralOptions
 {
     juce::String language;      // i18n id ("en", "pt-BR")
-    int uiScale = 100;          // percent
-    bool compactMenus = true;   // menu density: compact (native-like rows) or comfortable (round 163)
+    int uiScale = 125;          // percent
+    bool compactMenus = false;   // menu density: compact (native-like rows) or comfortable (round 163)
     bool waveSpectral = false, waveStereo = false;
     int noteNames = 0;          // notenames::Style: English, Germanic, Solfège (round 165f)
     bool noteFlats = false;     // black notes as flats
@@ -27,7 +27,7 @@ struct GeneralOptions
     bool rackStepsChannelColour = true; // lit Channel Rack steps in their channel's colour (LYNX, round 170a2)
     bool splash = true, startupSound = true, scanAtStart = true;
     bool menuEntry = false;     // Linux AppImage: LYNX in the applications menu + the .lynx file type (round 161)
-    bool typingPiano = true, keepEditorsOpen = false, rememberSeek = false;
+    bool typingPiano = false, keepEditorsOpen = false, rememberSeek = false;
     bool clipLaunchWorkflow = false; // Settings › General › Workflow (round 181a): false = Pattern workflow, the default
     bool stretchedClipsLoop = true; // LYNX extra (issue #25): a stretched pattern clip loops its pattern; off = FL (once)
     // FL's General › "Select first channel with notes when the pattern changes" (off by default; REA round 167j §5)
@@ -49,9 +49,9 @@ struct GeneralOptions
     bool pluginSubstitutes = true; // missing plugins play a LYNX equivalent (core/PluginSubstitutes.h)
     int crashReports = 0;          // crashreport::Consent: 0 ask, 1 always send, 2 never (round 159)
     bool checkUpdates = true;      // "Check for updates automatically" (ui/Updater.h, round 166b)
-    bool reducedEffects = false;
+    bool reducedEffects = true;
     bool artMotion = true;         // round 170j: the Themed plugins' art moves (falling petals, glows...)
-    int animationRate = 0;         // round 174e2: playhead / meters / scopes at the display's refresh (0), or at most 60 / 30 Hz
+    int animationRate = 30;         // round 174e2: playhead / meters / scopes at the display's refresh (0), or at most 60 / 30 Hz
     bool gpuRendering = true;      // Windows: Direct2D (JUCE 8's default) or GDI for every LYNX window (round 157a)
     int pluginStyle = -1;          // −1 automatic (each plugin its own style), else a skin::Style forced everywhere   // plugin editors without glows, blooms or the open animation (ui/PluginSkin.h)
 

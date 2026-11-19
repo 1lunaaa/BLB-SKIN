@@ -63,7 +63,7 @@ public:
     // second (60, 30) for every ticker, still on the display's vertical blanks (message thread)
     static int& rateLimit()
     {
-        static int hz = 0;
+        static int hz = 30;
         return hz;
     }
 

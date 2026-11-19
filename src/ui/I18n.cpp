@@ -172,7 +172,7 @@ void initialise (const juce::StringArray& args)
     {
         // the very first start of the app (no language chosen, setup wizard never finished): the OS language when
         // LYNX has it; the wizard's Language box starts there and the choice is kept
-        id = osDefault();
+        id = "en";
         save (id);
     }
 
