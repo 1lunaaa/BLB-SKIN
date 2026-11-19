@@ -7089,12 +7089,22 @@ bool addAudioClip (AudioEngine& engine, const juce::File& file, std::int64_t sta
 
 void PlaylistComponent::filesDropped (const juce::StringArray& files, int x, int y)
 {
-    // Si se suelta en la columna izquierda de cabeceras (sobre una pista o debajo), crear/cargar Sampler (como FL Studio)
-    if (x < headerWidth)
+    const int hoveredTrack = (y >= tracksTop()) ? yToTrack (y) : -1;
+    const auto& currentTracks = engine.getSong().playlistTracks;
+    const bool onInstrumentTrack = hoveredTrack >= 0 && hoveredTrack < (int) currentTracks.size()
+                                   && currentTracks[(std::size_t) hoveredTrack].mode == PlaylistTrackMode::instrument;
+    bool hasSampleFile = false;
+    for (const auto& f : files)
+        if (SampleLibrary::isSampleFile (juce::File (f)))
+            hasSampleFile = true;
+
+    // Si se suelta en la cabecera izquierda o sobre una Instrument Track existente, crear/cargar Sampler (como FL Studio)
+    if ((x < headerWidth || onInstrumentTrack) && hasSampleFile)
     {
         int dropTrack = (y >= tracksTop()) ? yToTrack (y) : (int) engine.getSong().playlistTracks.size();
         if (dropTrack < 0)
             dropTrack = (int) engine.getSong().playlistTracks.size();
+        const auto dropStart = (x >= headerWidth) ? juce::jmax<std::int64_t> (0, snap (xToTick (x), true)) : std::int64_t { 0 };
 
         const std::uint32_t palette[] = { 0xffff6b1a, 0xff00c4b4, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xff10b981 };
         int lastChannel = -1;
@@ -7196,7 +7206,7 @@ void PlaylistComponent::filesDropped (const juce::StringArray& files, int x, int
                     clip.kind = ClipKind::pattern;
                     clip.pattern = patIdx;
                     clip.track = targetTrack;
-                    clip.start = 0;
+                    clip.start = dropStart;
                     clip.length = s.patterns[(std::size_t) patIdx].effectiveLength (s.beatsPerBar);
                     s.playlist.push_back (clip);
                 }
