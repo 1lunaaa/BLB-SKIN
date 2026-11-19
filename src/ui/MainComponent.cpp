@@ -520,11 +520,16 @@ MainComponent::MainComponent (AudioEngine& e, bool restoreUserSettings)
     playlist.onOpenPattern = [this] { showPanel (Panel::channelRack); };
     playlist.onOpenPlugin = [this] (int channel) {
         const auto& channels = engine.getSong().channels;
-        if (channel >= 0 && channel < (int) channels.size()
-            && channels[(std::size_t) channel].instrument == InstrumentKind::plugin)
+        if (channel >= 0 && channel < (int) channels.size())
         {
-            rack.openPluginWindow (channel);
-            return;
+            const auto& ch = channels[(std::size_t) channel];
+            const bool isEmptyDefault = (ch.instrument == InstrumentKind::synth
+                                         && ch.name.rfind ("Instrumento", 0) == 0);
+            if (! isEmptyDefault)
+            {
+                rack.toggleEditor (channel, true);
+                return;
+            }
         }
         pendingInstrumentChannel = channel;
         if (pluginPickerView == nullptr)
@@ -2722,21 +2727,17 @@ void MainComponent::togglePluginPicker()
         safe->pendingInstrumentChannel = -1;
         if (targetCh >= 0 && targetCh < (int) safe->engine.getSong().channels.size())
         {
-            const auto kind = c.instrument;
-            safe->engine.editSong ([targetCh, c] (Song& s) mutable {
+            const auto newName = c.name;
+            safe->engine.editSong ([targetCh, c = std::move (c), newName] (Song& s) mutable {
                 if (targetCh < 0 || targetCh >= (int) s.channels.size())
                     return;
-                c.mixerTrack = s.channels[(std::size_t) targetCh].mixerTrack;
-                if (c.colour == 0)
-                    c.colour = s.channels[(std::size_t) targetCh].colour;
-                s.channels[(std::size_t) targetCh] = c;
+                replaceGenerator (s, targetCh, std::move (c));
                 for (auto& pt : s.playlistTracks)
                     if (pt.mode == PlaylistTrackMode::instrument && pt.channel == targetCh && pt.name == "Instrumento")
-                        pt.name = c.name;
+                        pt.name = newName;
             });
             safe->engine.setSelectedChannel (targetCh);
-            if (kind == InstrumentKind::plugin)
-                safe->rack.openPluginWindow (targetCh);
+            safe->rack.toggleEditor (targetCh, true);
             return;
         }
         safe->rack.addChannel (std::move (c), true, safe->resolveInstrumentInsert());
@@ -2755,12 +2756,8 @@ void MainComponent::togglePluginPicker()
         }
     };
     targets.close = [safe] {
-        if (safe != nullptr)
-        {
-            safe->pendingInstrumentChannel = -1;
-            if (safe->pluginPickerView != nullptr)
-                safe->togglePluginPicker();
-        }
+        if (safe != nullptr && safe->pluginPickerView != nullptr)
+            safe->togglePluginPicker();
     };
     targets.showMixer = [safe] { // (an effect dragged out of the picker: FL brings up the Mixer)
         if (safe != nullptr)
