@@ -1395,6 +1395,14 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
 {
     const auto chord = chordFromKeyPress (key);
 
+    // BandLab Slice (S): let Playlist handle plain S before typing piano steals it
+    if ((chord.mods & (keys::ctrl | keys::alt | keys::shift)) == 0
+        && keys::letterOfKeyCode (key.getKeyCode()) == 'S'
+        && workspace.isPanelVisible (Panel::playlist)
+        && workspace.getFocused() == Panel::playlist
+        && playlist.handleKey (key))
+        return true;
+
     // 1. the typing piano: the keys its layout takes (notes, FL's LOCK) win over the shortcuts; FL's FREE keys don't
     const auto typed = typingKey (chord);
     if (typed.taken)

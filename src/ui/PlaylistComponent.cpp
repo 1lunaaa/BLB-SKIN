@@ -3858,6 +3858,8 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
 
     if (hit >= 0)
     {
+        if (! isSelected (hit))
+            setSelection ({ hit });
         grabClips (rightEdge ? Drag::resize : leftEdge ? Drag::trimLeft : Drag::move);
         stretchOriginals.clear();
         if (EditorGlobals::get().stretchOnResize && (rightEdge || leftEdge))
@@ -3906,12 +3908,11 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
     if (const auto track = yToTrack (e.y); track >= 0 && track < (int) engine.getSong().playlistTracks.size())
     {
         const auto& pt = engine.getSong().playlistTracks[(std::size_t) track];
-        const bool isDrumTrack = (pt.name == "Caja de ritmos" || pt.name == "Ritmos");
-        if (isDrumTrack)
-            brush = {};
-
-        if (pt.mode == PlaylistTrackMode::instrument && (brush.kind == ClipKind::pattern || isDrumTrack))
+        if (pt.mode == PlaylistTrackMode::instrument)
         {
+            // Never place audio/automation clips on an instrument track; always restore its MIDI pattern
+            brush = {};
+            const bool isDrumTrack = (pt.name == "Caja de ritmos" || pt.name == "Ritmos");
             engine.editSong ([track, isDrumTrack] (Song& s) {
                 bool keepCurrentDrumPat = false;
                 if (isDrumTrack && s.currentPattern >= 0 && s.currentPattern < (int) s.patterns.size())
@@ -3921,11 +3922,28 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
                 }
                 if (! keepCurrentDrumPat)
                 {
-                    if (const auto p = trackmodes::instrumentTrackPattern (s, track); p >= 0)
+                    int found = -1;
+                    const int ch = s.playlistTracks[(std::size_t) track].channel;
+                    if (ch >= 0 && ch < (int) s.channels.size())
                     {
-                        if (isDrumTrack && p < (int) s.patterns.size() && s.patterns[(std::size_t) p].name == "Kick")
-                            s.patterns[(std::size_t) p].name = "Caja de ritmos";
-                        s.currentPattern = p;
+                        // Prefer an existing pattern that already holds MIDI notes for this channel
+                        for (int p = 0; p < (int) s.patterns.size(); ++p)
+                        {
+                            const auto& pat = s.patterns[(std::size_t) p];
+                            if (! pat.notes.empty() && std::all_of (pat.notes.begin(), pat.notes.end(), [ch] (const Note& n) { return n.channel == ch; }))
+                            {
+                                found = p;
+                                break;
+                            }
+                        }
+                    }
+                    if (found < 0)
+                        found = trackmodes::instrumentTrackPattern (s, track);
+                    if (found >= 0)
+                    {
+                        if (isDrumTrack && found < (int) s.patterns.size() && s.patterns[(std::size_t) found].name == "Kick")
+                            s.patterns[(std::size_t) found].name = "Caja de ritmos";
+                        s.currentPattern = found;
                     }
                 }
             });
@@ -6570,6 +6588,20 @@ void PlaylistComponent::pasteClips (std::int64_t at)
             if (c.kind == ClipKind::automation && c.automation >= (int) s.automations.size())
                 continue;
 
+            if (c.track >= 0 && c.track < (int) s.playlistTracks.size()
+                && s.playlistTracks[(std::size_t) c.track].mode == PlaylistTrackMode::instrument
+                && c.kind != ClipKind::pattern)
+            {
+                const int pat = trackmodes::instrumentTrackPattern (s, c.track);
+                if (pat < 0)
+                    continue;
+                c.kind = ClipKind::pattern;
+                c.pattern = pat;
+                c.channel = -1;
+                c.automation = -1;
+                c.length = s.patterns[(std::size_t) pat].effectiveLength (s.beatsPerBar);
+            }
+
             c.start = c.start - first + target;
             added.push_back ((int) s.playlist.size());
             s.playlist.push_back (c);
@@ -6673,6 +6705,37 @@ bool PlaylistComponent::handleKey (const juce::KeyPress& key)
     {
         setSelection ({});
         return true;
+    }
+
+    // BandLab Slice (S): split selected clips (or clips under playhead) at the playhead
+    if (! cmd && ! mods.isShiftDown() && ! mods.isAltDown() && letter == 'S')
+    {
+        const auto splitAt = engine.getTransport().positionTicks.load();
+        const auto& song = engine.getSong();
+        std::vector<int> targets = selection;
+        if (targets.empty())
+        {
+            for (int i = 0; i < (int) song.playlist.size(); ++i)
+                if (splitAt > song.playlist[(std::size_t) i].start && splitAt < song.playlist[(std::size_t) i].end())
+                    targets.push_back (i);
+        }
+
+        bool canSplit = false;
+        for (auto i : targets)
+            if (i >= 0 && i < (int) song.playlist.size() && splitAt > song.playlist[(std::size_t) i].start && splitAt < song.playlist[(std::size_t) i].end())
+                canSplit = true;
+
+        if (canSplit)
+        {
+            setSelection ({});
+            engine.editSong ([targets, splitAt] (Song& s) {
+                for (auto i : targets)
+                    if (i >= 0 && i < (int) s.playlist.size() && splitAt > s.playlist[(std::size_t) i].start && splitAt < s.playlist[(std::size_t) i].end())
+                        s.playlist.push_back (splitClip (s.playlist[(std::size_t) i], splitAt));
+            });
+            sortClips();
+            return true;
+        }
     }
 
     // Shift+Up / Shift+Down: the selected clips (audio, patterns, automation) move one track up / down together
