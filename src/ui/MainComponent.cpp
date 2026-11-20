@@ -2238,9 +2238,11 @@ void MainComponent::stopAndRewind (bool toStart)
     // FL: the transport's Stop also ends a Browser sample preview (issue #11)
     browser.stopPreview(); // (the engine's one preview voice: the Sample browser window's preview stops too)
     const auto& globals = EditorGlobals::get();
-    const auto back = transportedit::stopTarget (alreadyStopped, globals.rememberSeek && engine.getSong().mode == PlayMode::song, globals.seekMark);
+    auto back = transportedit::stopTarget (alreadyStopped, globals.rememberSeek && engine.getSong().mode == PlayMode::song, globals.seekMark);
+    if (! alreadyStopped && back <= 0 && playStartTicks > 0.0)
+        back = (std::int64_t) std::llround (playStartTicks);
 
-    if (back > 0) // "Remember seek time": back to the position clicked on the Playlist ruler
+    if (back > 0) // back to where playback/recording started (or ruler mark)
         engine.seek ((double) back);
     else
         engine.rewind();
@@ -2971,8 +2973,14 @@ void MainComponent::toggleRecording()
     {
         engine.setRecording (false);
         engine.setAudioRecordingArmed (false);
-        if (engine.getTransport().playing.load())
-            stopAndRewind();
+        if (engine.getTransport().playing.load() || engine.isWaitingForInput() || engine.isCountingIn())
+        {
+            engine.stop();
+            if (playStartTicks > 0.0)
+                engine.seek (playStartTicks);
+            else
+                engine.rewind();
+        }
         return;
     }
 
@@ -2982,16 +2990,26 @@ void MainComponent::toggleRecording()
             return;
         const int selPl = juce::jlimit (0, (int) s.playlistTracks.size() - 1, playlistArea.getSelectedTrack());
         int insertIdx = s.playlistTracks[(std::size_t) selPl].mixerTrack;
-        if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
+        if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size()
+            || s.playlistTracks[(std::size_t) selPl].mode != PlaylistTrackMode::audio)
         {
-            insertIdx = juce::jlimit (1, std::max (1, (int) s.mixer.size() - 1), selPl + 1);
-            engine.editSong ([selPl, insertIdx] (Song& song) {
+            engine.editSong ([selPl, &insertIdx] (Song& song) {
                 if (selPl >= 0 && selPl < (int) song.playlistTracks.size())
                 {
-                    song.playlistTracks[(std::size_t) selPl].mode = PlaylistTrackMode::audio;
-                    song.playlistTracks[(std::size_t) selPl].mixerTrack = insertIdx;
+                    auto& pt = song.playlistTracks[(std::size_t) selPl];
+                    if (pt.mixerTrack <= 0 || pt.mixerTrack >= (int) song.mixer.size())
+                        pt.mixerTrack = song.claimFreeInsert();
+                    pt.mode = PlaylistTrackMode::audio;
+                    insertIdx = pt.mixerTrack;
                 }
             });
+        }
+        if (insertIdx > 0 && insertIdx < (int) s.mixer.size())
+        {
+            engine.editSong ([insertIdx] (Song& song) {
+                if (insertIdx > 0 && insertIdx < (int) song.mixer.size())
+                    song.mixer[(std::size_t) insertIdx].recordSource = RecordSource::externalInput;
+            }, false);
         }
         if (! engine.hasAudioInput())
             engine.openAudioInput();
@@ -3010,6 +3028,11 @@ void MainComponent::toggleRecording()
     if (! engine.getRecordOptions().askWhatToRecord || ! persistent)
     {
         armSelectedVoiceTrack();
+        if (! engine.getTransport().playing.load())
+        {
+            playStartTicks = engine.getTransport().positionTicks.load();
+            EditorGlobals::get().seekMark = (std::int64_t) std::llround (playStartTicks);
+        }
         engine.setAudioRecordingArmed (true);
         engine.setRecording (true);
         if (! engine.getTransport().playing.load())
@@ -3065,6 +3088,11 @@ void MainComponent::quickRecordAudio()
     {
         o.recordAudio = true;
         engine.setRecordOptions (o);
+    }
+    if (! transport.playing.load())
+    {
+        playStartTicks = transport.positionTicks.load();
+        EditorGlobals::get().seekMark = (std::int64_t) std::llround (playStartTicks);
     }
     engine.setRecording (true);
     if (! transport.playing.load())

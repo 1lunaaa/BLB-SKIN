@@ -146,6 +146,13 @@ static int takeTrackPick (const Song& song, int insert, std::int64_t start, std:
                 return t;
         }
     }
+    // Fallback: if an empty audio track exists with no clips yet, reuse it instead of spawning another track below
+    for (int t = (int) song.playlistTracks.size() - 1; t >= 0; --t)
+    {
+        const auto& pt = song.playlistTracks[(std::size_t) t];
+        if (pt.mode == PlaylistTrackMode::audio && freeAt (t))
+            return t;
+    }
     int next = 0;
     for (const auto& c : song.playlist)
         next = std::max (next, c.track + 1);
