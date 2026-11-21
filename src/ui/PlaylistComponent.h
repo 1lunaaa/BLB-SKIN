@@ -689,6 +689,10 @@ public:
         lyricsDrawer.onClose = [this] { toggleLyricsDrawer (false); };
 
         fxDrawer.onClose = [this] { toggleFxDrawer (false); };
+        fxDrawer.onOpenPianoRoll = [this] {
+            toggleFxDrawer (false);
+            if (onOpenEditor) onOpenEditor();
+        };
         fxDrawer.onOpenSlotEditor = [this] (int t, int slot) {
             if (onOpenSlotEditor) onOpenSlotEditor (t, slot);
         };

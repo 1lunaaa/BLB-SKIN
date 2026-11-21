@@ -24,6 +24,7 @@ public:
     ~BandLabFxDrawer() override;
 
     std::function<void()> onClose;
+    std::function<void()> onOpenPianoRoll;
     std::function<void (int track, int slot)> onOpenSlotEditor;
 
     void setTrack (int track);

@@ -3336,12 +3336,42 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
                 const auto& s = engine.getSong();
                 const auto& pt = s.playlistTracks[(std::size_t) track];
                 int insertIdx = pt.mixerTrack;
-                if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size())
+                bool dupInsert = false;
+                for (int other = 0; other < (int) s.playlistTracks.size(); ++other)
+                    if (other != track && s.playlistTracks[(std::size_t) other].mode != PlaylistTrackMode::unassigned
+                        && s.playlistTracks[(std::size_t) other].mixerTrack == insertIdx)
+                        dupInsert = true;
+                if (insertIdx <= 0 || insertIdx >= (int) s.mixer.size() || dupInsert)
                 {
-                    insertIdx = juce::jlimit (1, std::max (1, (int) s.mixer.size() - 1), track + 1);
-                    engine.editSong ([track, insertIdx] (Song& song) {
-                        if (track >= 0 && track < (int) song.playlistTracks.size())
-                            song.playlistTracks[(std::size_t) track].mixerTrack = insertIdx;
+                    engine.editSong ([track, &insertIdx] (Song& song) {
+                        if (track < 0 || track >= (int) song.playlistTracks.size())
+                            return;
+                        int freeIns = -1;
+                        for (int m = 1; m < (int) song.mixer.size(); ++m)
+                        {
+                            bool used = false;
+                            for (int o = 0; o < (int) song.playlistTracks.size(); ++o)
+                                if (o != track && song.playlistTracks[(std::size_t) o].mode != PlaylistTrackMode::unassigned
+                                    && song.playlistTracks[(std::size_t) o].mixerTrack == m)
+                                    used = true;
+                            if (! used)
+                            {
+                                freeIns = m;
+                                break;
+                            }
+                        }
+                        if (freeIns <= 0)
+                            freeIns = juce::jlimit (1, std::max (1, (int) song.mixer.size() - 1), track + 1);
+                        auto& trk = song.playlistTracks[(std::size_t) track];
+                        trk.mixerTrack = freeIns;
+                        if (trk.mode == PlaylistTrackMode::instrument && trk.channel >= 0 && trk.channel < (int) song.channels.size())
+                        {
+                            const int oldIns = song.channels[(std::size_t) trk.channel].mixerTrack;
+                            for (auto& ch : song.channels)
+                                if (ch.mixerTrack == oldIns && ch.instrument != InstrumentKind::audioClip)
+                                    ch.mixerTrack = freeIns;
+                        }
+                        insertIdx = freeIns;
                     });
                 }
                 for (int m = 1; m < (int) s.mixer.size(); ++m)
@@ -3910,23 +3940,45 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
         const auto& pt = engine.getSong().playlistTracks[(std::size_t) track];
         if (pt.mode == PlaylistTrackMode::instrument)
         {
-            // Never place audio/automation clips on an instrument track; always restore its MIDI pattern
             brush = {};
             const bool isDrumTrack = (pt.name == "Caja de ritmos" || pt.name == "Ritmos");
             engine.editSong ([track, isDrumTrack] (Song& s) {
-                bool keepCurrentDrumPat = false;
-                if (isDrumTrack && s.currentPattern >= 0 && s.currentPattern < (int) s.patterns.size())
+                auto patternBelongsToTrack = [&] (int patIdx) {
+                    if (patIdx < 0 || patIdx >= (int) s.patterns.size())
+                        return false;
+                    // Already placed on this track
+                    for (const auto& c : s.playlist)
+                        if (c.track == track && c.kind == ClipKind::pattern && c.pattern == patIdx)
+                            return true;
+                    const auto& pat = s.patterns[(std::size_t) patIdx];
+                    if (isDrumTrack)
+                        return ! pat.notes.empty();
+                    const int ch = s.playlistTracks[(std::size_t) track].channel;
+                    return ch >= 0 && ! pat.notes.empty()
+                           && std::all_of (pat.notes.begin(), pat.notes.end(), [ch] (const Note& n) { return n.channel == ch; });
+                };
+
+                int found = -1;
+                if (patternBelongsToTrack (s.currentPattern))
+                    found = s.currentPattern;
+                else
                 {
-                    const auto& curName = s.patterns[(std::size_t) s.currentPattern].name;
-                    keepCurrentDrumPat = (curName.rfind ("Caja de ritmos", 0) == 0 || curName.rfind ("Ritmos", 0) == 0);
+                    // Prefer the last pattern already placed on this track
+                    for (int i = (int) s.playlist.size() - 1; i >= 0; --i)
+                    {
+                        const auto& c = s.playlist[(std::size_t) i];
+                        if (c.track == track && c.kind == ClipKind::pattern && c.pattern >= 0 && c.pattern < (int) s.patterns.size())
+                        {
+                            found = c.pattern;
+                            break;
+                        }
+                    }
                 }
-                if (! keepCurrentDrumPat)
+                if (found < 0)
                 {
-                    int found = -1;
                     const int ch = s.playlistTracks[(std::size_t) track].channel;
                     if (ch >= 0 && ch < (int) s.channels.size())
                     {
-                        // Prefer an existing pattern that already holds MIDI notes for this channel
                         for (int p = 0; p < (int) s.patterns.size(); ++p)
                         {
                             const auto& pat = s.patterns[(std::size_t) p];
@@ -3937,14 +3989,14 @@ void PlaylistComponent::mouseDown (const juce::MouseEvent& e)
                             }
                         }
                     }
-                    if (found < 0)
-                        found = trackmodes::instrumentTrackPattern (s, track);
-                    if (found >= 0)
-                    {
-                        if (isDrumTrack && found < (int) s.patterns.size() && s.patterns[(std::size_t) found].name == "Kick")
-                            s.patterns[(std::size_t) found].name = "Caja de ritmos";
-                        s.currentPattern = found;
-                    }
+                }
+                if (found < 0)
+                    found = trackmodes::instrumentTrackPattern (s, track);
+                if (found >= 0)
+                {
+                    if (isDrumTrack && found < (int) s.patterns.size() && s.patterns[(std::size_t) found].name == "Kick")
+                        s.patterns[(std::size_t) found].name = "Caja de ritmos";
+                    s.currentPattern = found;
                 }
             });
             engine.setSelectedChannel (engine.getSong().playlistTracks[(std::size_t) track].channel); // its piano roll is the channel's
@@ -8545,7 +8597,25 @@ void PlaylistComponent::addBandLabTrack (int kind)
     const std::uint32_t palette[] = { 0xffff6b1a, 0xff00c4b4, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xff10b981 };
     engine.editSong ([kind, &palette] (Song& s) {
         const int trackIdx = (int) s.playlistTracks.size();
-        const int insertIdx = juce::jlimit (1, maxMixerTracks - 1, trackIdx + 1);
+        auto isInsertUsed = [&s] (int idx) {
+            for (const auto& existing : s.playlistTracks)
+                if (existing.mode != PlaylistTrackMode::unassigned && existing.mixerTrack == idx)
+                    return true;
+            return false;
+        };
+        int insertIdx = juce::jlimit (1, maxMixerTracks - 1, trackIdx + 1);
+        if (isInsertUsed (insertIdx))
+        {
+            insertIdx = -1;
+            for (int m = 1; m < maxMixerTracks; ++m)
+                if (! isInsertUsed (m))
+                {
+                    insertIdx = m;
+                    break;
+                }
+            if (insertIdx < 0)
+                insertIdx = juce::jlimit (1, maxMixerTracks - 1, trackIdx + 1);
+        }
         while ((int) s.mixer.size() <= insertIdx)
         {
             MixerTrack mt;

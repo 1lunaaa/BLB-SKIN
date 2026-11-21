@@ -2325,6 +2325,9 @@ void MainComponent::refreshPanelButtons()
 
 void MainComponent::openPianoRoll()
 {
+    playlistArea.toggleFxDrawer (false);
+    playlistArea.toggleSoundsDrawer (false);
+    playlistArea.toggleLyricsDrawer (false);
     showPanel (Panel::pianoRoll);
     pianoRoll.scrollToNotes();
 }

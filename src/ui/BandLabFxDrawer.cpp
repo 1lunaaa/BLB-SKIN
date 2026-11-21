@@ -237,6 +237,10 @@ void BandLabFxDrawer::setMode (Mode newMode)
         if (drumRack == nullptr)
         {
             auto rack = std::make_unique<ChannelRackComponent> (engine);
+            rack->onOpenPianoRoll = [this] {
+                if (onOpenPianoRoll)
+                    onOpenPianoRoll();
+            };
             rack->customChannelFilter = [this] (const ChannelDef& ch) -> bool {
                 if (ch.instrument == InstrumentKind::audioClip)
                     return false;
@@ -332,6 +336,10 @@ void BandLabFxDrawer::resized()
         if (drumRack == nullptr)
         {
             auto rack = std::make_unique<ChannelRackComponent> (engine);
+            rack->onOpenPianoRoll = [this] {
+                if (onOpenPianoRoll)
+                    onOpenPianoRoll();
+            };
             rack->customChannelFilter = [this] (const ChannelDef& ch) -> bool {
                 if (ch.instrument == InstrumentKind::audioClip)
                     return false;

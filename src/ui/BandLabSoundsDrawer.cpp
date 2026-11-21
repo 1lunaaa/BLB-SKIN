@@ -615,7 +615,32 @@ void BandLabSoundsDrawer::mouseDrag (const juce::MouseEvent& e)
     {
         dragStarted = true;
         juce::var desc (juce::String (BrowserComponent::dragDescription) + "|" + item.file.getFullPathName());
-        container->startDragging (desc, this);
+
+        const auto label = item.file.getFileNameWithoutExtension();
+        const int w = 220, h = 38;
+        juce::Image pill (juce::Image::ARGB, w, h, true);
+        {
+            juce::Graphics g (pill);
+            const auto r = juce::Rectangle<float> (1.0f, 1.0f, (float) (w - 2), (float) (h - 2));
+            g.setColour (juce::Colour (0xe6112a2b));
+            g.fillRoundedRectangle (r, 7.0f);
+            g.setColour (juce::Colour (0xff00c4b4));
+            g.drawRoundedRectangle (r, 7.0f, 1.4f);
+
+            // Mini waveform bars icon
+            const float bars[] { 0.35f, 0.75f, 1.0f, 0.55f, 0.85f, 0.4f };
+            for (int i = 0; i < 6; ++i)
+            {
+                const float bh = 14.0f * bars[i];
+                g.fillRoundedRectangle (11.0f + (float) i * 3.2f, ((float) h - bh) * 0.5f, 2.0f, bh, 1.0f);
+            }
+
+            g.setColour (juce::Colour (0xfff4f6f8));
+            g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+            g.drawText (label, 36, 0, w - 46, h, juce::Justification::centredLeft, true);
+        }
+
+        container->startDragging (desc, this, juce::ScaledImage (pill), true, nullptr);
     }
 }
 
