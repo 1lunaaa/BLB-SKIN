@@ -77,6 +77,7 @@ private:
     bool draggingScroll = false;
     float scrollDragGrabOffset = 0.0f;
     juce::File playingFile;
+    double playingUntilMs = 0.0;
     bool dragStarted = false;
     juce::Point<int> downPos;
 

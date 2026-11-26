@@ -568,7 +568,27 @@ void BandLabSoundsDrawer::mouseDown (const juce::MouseEvent& e)
     }
     else
     {
+        const double nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (playingFile == item.file && nowMs < playingUntilMs)
+        {
+            playingFile = {};
+            playingUntilMs = 0.0;
+            engine.previewFile ({});
+            repaint();
+            return;
+        }
+
+        double durationMs = 4000.0;
+        juce::AudioFormatManager fmt;
+        fmt.registerBasicFormats();
+        if (std::unique_ptr<juce::AudioFormatReader> reader { fmt.createReaderFor (item.file) })
+        {
+            if (reader->sampleRate > 0.0)
+                durationMs = (double) reader->lengthInSamples * 1000.0 / reader->sampleRate;
+        }
+
         playingFile = item.file;
+        playingUntilMs = nowMs + durationMs;
         engine.previewFile (item.file);
         repaint();
     }
@@ -580,8 +600,31 @@ void BandLabSoundsDrawer::mouseDoubleClick (const juce::MouseEvent& e)
     if (r < 0 || r >= (int) rows.size())
         return;
     const auto& item = rows[(std::size_t) r];
-    if (! item.isFolder && onInsertSample)
-        onInsertSample (item.file);
+    if (! item.isFolder)
+    {
+        const double nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (playingFile == item.file && nowMs < playingUntilMs)
+        {
+            playingFile = {};
+            playingUntilMs = 0.0;
+            engine.previewFile ({});
+        }
+        else
+        {
+            double durationMs = 4000.0;
+            juce::AudioFormatManager fmt;
+            fmt.registerBasicFormats();
+            if (std::unique_ptr<juce::AudioFormatReader> reader { fmt.createReaderFor (item.file) })
+            {
+                if (reader->sampleRate > 0.0)
+                    durationMs = (double) reader->lengthInSamples * 1000.0 / reader->sampleRate;
+            }
+            playingFile = item.file;
+            playingUntilMs = nowMs + durationMs;
+            engine.previewFile (item.file);
+        }
+        repaint();
+    }
 }
 
 void BandLabSoundsDrawer::mouseUp (const juce::MouseEvent&)

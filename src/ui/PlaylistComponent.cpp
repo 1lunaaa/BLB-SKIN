@@ -1207,7 +1207,7 @@ std::int64_t PlaylistComponent::snap (double tick, bool enabled) const
     const auto step = gridTicks();
 
     if (option.kind == grid::Kind::nearest)
-        return noteedit::snapNearest (tick, snapCandidates(), 10.0 / pixelsPerTick, step);
+        return noteedit::snapNearest (tick, snapCandidates(), 24.0 / pixelsPerTick, step);
 
     // whole bars respect time signature changes
     if (step == (std::int64_t) ppq * juce::jmax (1, engine.getSong().beatsPerBar))
@@ -7402,14 +7402,51 @@ void PlaylistComponent::filesDropped (const juce::StringArray& files, int x, int
     }
 
     auto start = juce::jmax<std::int64_t> (0, snap (xToTick (x), true));
-    auto track = yToTrack (y);
+    const int lastTrack = numTracks() - 1;
+    const bool droppedBelowTracks = (lastTrack < 0) || (y >= trackToY (lastTrack) + heightOf (lastTrack));
+    auto track = droppedBelowTracks ? numTracks() : yToTrack (y);
+    const std::uint32_t palette[] = { 0xffff6b1a, 0xff00c4b4, 0xff3d8bfd, 0xfff59e0b, 0xffa855f7, 0xff10b981 };
 
     for (const auto& f : files)
-        if (videotracks::isVideoFile (juce::File (f)))
+    {
+        const juce::File file (f);
+        if (videotracks::isVideoFile (file))
+        {
             // a video dropped on the clip tracks: a video clip on a video track, where it was dropped (round 174d)
-            videotracks::importVideo (engine, juce::File (f), engine.getSong().secondsForTicks (start));
-        else if (addAudioClip (engine, juce::File (f), start, track, false))
-            ++track; // multiple files: one below the other
+            videotracks::importVideo (engine, file, engine.getSong().secondsForTicks (start));
+        }
+        else if (SampleLibrary::isSampleFile (file))
+        {
+            if (track >= (int) engine.getSong().playlistTracks.size())
+            {
+                const auto trackColour = palette[(std::size_t) track % 6];
+                const auto trackName = file.getFileNameWithoutExtension().toStdString();
+                engine.editSong ([track, trackColour, trackName, &palette] (Song& s) {
+                    while ((int) s.playlistTracks.size() <= track)
+                    {
+                        const int idx = (int) s.playlistTracks.size();
+                        const int insertIdx = s.claimFreeInsert();
+                        PlaylistTrack pt;
+                        pt.mode = PlaylistTrackMode::audio;
+                        pt.name = (idx == track) ? trackName : ("Voz/Audio " + std::to_string (idx + 1));
+                        pt.colour = (idx == track) ? trackColour : palette[(std::size_t) idx % 6];
+                        pt.mixerTrack = insertIdx;
+                        if (insertIdx > 0 && insertIdx < (int) s.mixer.size())
+                        {
+                            s.mixer[(std::size_t) insertIdx].name = pt.name;
+                            s.mixer[(std::size_t) insertIdx].colour = pt.colour;
+                        }
+                        s.playlistTracks.push_back (std::move (pt));
+                    }
+                });
+            }
+            if (addAudioClip (engine, file, start, track, false))
+                ++track; // multiple files: one below the other
+        }
+    }
+    refreshTrackLayout();
+    updateScrollBars();
+    repaint();
 }
 
 void PlaylistComponent::addAudioClipAtPlayhead (const juce::File& file)
