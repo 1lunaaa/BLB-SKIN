@@ -420,6 +420,8 @@ if(LYNX_BUILD_APP)
         src/ui/PianoRollComponent.cpp
         src/ui/PlaylistComponent.cpp
     src/ui/BandLabSoundsDrawer.cpp
+    src/ui/BandLabMasteringDrawer.cpp
+    src/ui/BandLabInstrumentDrawer.cpp
     src/ui/BandLabFxDrawer.cpp
     src/ui/BandLabEffectPicker.cpp
         src/ui/PatternBlocksView.cpp

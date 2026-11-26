@@ -78,6 +78,8 @@ int BandLabFxDrawer::findAutoPitchSlot() const
 
 void BandLabFxDrawer::ensureAutoPitchOnTrack()
 {
+    clearEmbeddedEditor();
+    return;
     if (track <= 0)
         return;
 
@@ -158,6 +160,8 @@ void BandLabFxDrawer::ensureAutoPitchOnTrack()
 
 void BandLabFxDrawer::syncEmbeddedEditor()
 {
+    clearEmbeddedEditor();
+    return;
     if (! isVisible() || mode != Mode::input)
     {
         clearEmbeddedEditor();

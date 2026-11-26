@@ -532,8 +532,31 @@ MainComponent::MainComponent (AudioEngine& e, bool restoreUserSettings)
             }
         }
         pendingInstrumentChannel = channel;
-        if (pluginPickerView == nullptr)
-            togglePluginPicker();
+        playlistArea.toggleInstrumentDrawer (true, channel);
+    };
+    playlistArea.onInstrumentChosen = [this] (int targetCh, ChannelDef c) {
+        if (targetCh < 0)
+            targetCh = pendingInstrumentChannel;
+        pendingInstrumentChannel = -1;
+        if (targetCh >= 0 && targetCh < (int) engine.getSong().channels.size())
+        {
+            const auto newName = c.name;
+            engine.editSong ([targetCh, c = std::move (c), newName] (Song& s) mutable {
+                if (targetCh < 0 || targetCh >= (int) s.channels.size())
+                    return;
+                const auto keptColour = s.channels[(std::size_t) targetCh].colour;
+                c.colour = keptColour;
+                s.channels[(std::size_t) targetCh] = std::move (c);
+                for (auto& pt : s.playlistTracks)
+                    if (pt.channel == targetCh)
+                        pt.name = newName;
+            });
+            rack.toggleEditor (targetCh, true);
+        }
+        else
+        {
+            rack.addChannel (std::move (c), true);
+        }
     };
     playlist.onOpenMixerTrack = [this] (int insert) { // double-click on an empty audio track
         showPanel (Panel::mixer);
@@ -961,8 +984,9 @@ void MainComponent::paint (juce::Graphics& g)
     // Boton pill "Masterizando" a la derecha de Fila 2
     {
         const auto mBtn = masterPillBounds().toFloat();
-        fillRoundRect (g, mBtn, mBtn.getHeight() * 0.5f, juce::Colour (0xff191b1e));
-        g.setColour (juce::Colour (0xff070709));
+        const bool mastOpen = playlistArea.isMasteringDrawerOpen();
+        fillRoundRect (g, mBtn, mBtn.getHeight() * 0.5f, mastOpen ? colour::bg4 : juce::Colour (0xff191b1e));
+        g.setColour (mastOpen ? colour::borderStrong : juce::Colour (0xff070709));
         g.drawRoundedRectangle (mBtn.reduced (0.5f), mBtn.getHeight() * 0.5f, 1.0f);
         icons::draw (g, Icon::mixer, juce::Rectangle<float> (mBtn.getX() + 10.0f, mBtn.getCentreY() - 7.0f, 14.0f, 14.0f), colour::accent);
         g.setColour (colour::textPrimary);
@@ -1352,8 +1376,9 @@ void MainComponent::mouseDown (const juce::MouseEvent& e)
     }
     if (masterPillBounds().contains (e.getPosition()) && e.mods.isLeftButtonDown())
     {
-        showPanel (Panel::mixer);
-        mixer.selectTrack (0);
+        showPanel (Panel::playlist);
+        playlistArea.toggleMasteringDrawer (! playlistArea.isMasteringDrawerOpen());
+        repaint (masterPillBounds());
         return;
     }
     // a right-click on the toolbar's background (between the panels): show / hide groups, icon size, customize

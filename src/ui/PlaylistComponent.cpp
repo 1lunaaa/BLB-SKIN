@@ -8680,7 +8680,29 @@ void PlaylistComponent::addBandLabTrack (int kind)
         }
 
         s.mixer[(std::size_t) insertIdx].colour = pt.colour;
+        const auto trackColour = pt.colour;
+        const auto trackTitle = pt.name;
         s.playlistTracks.push_back (std::move (pt));
+
+        if (kind == 1 || kind == 2 || kind == 3)
+        {
+            const std::int64_t fourBars = (std::int64_t) ppq * (std::int64_t) juce::jmax (1, s.beatsPerBar) * 4;
+            Pattern pat;
+            pat.name = trackTitle + " " + std::to_string (trackIdx + 1);
+            pat.colour = trackColour;
+            pat.lengthTicks = fourBars;
+            const int patIdx = (int) s.patterns.size();
+            s.patterns.push_back (std::move (pat));
+            s.currentPattern = patIdx;
+
+            Clip clip;
+            clip.kind = ClipKind::pattern;
+            clip.pattern = patIdx;
+            clip.track = trackIdx;
+            clip.start = 0;
+            clip.length = fourBars;
+            s.playlist.push_back (std::move (clip));
+        }
     });
     currentTrack = juce::jmax (0, numTracks() - 1);
     refreshTrackLayout();

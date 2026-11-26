@@ -18,6 +18,8 @@
 #include "ui/ValueControl.h"
 #include "ui/BandLabSoundsDrawer.h"
 #include "ui/BandLabFxDrawer.h"
+#include "ui/BandLabMasteringDrawer.h"
+#include "ui/BandLabInstrumentDrawer.h"
 
 namespace lynx
 {
@@ -674,19 +676,30 @@ public:
     std::function<void()> onOpenEditor;
 
     std::function<void (int track, int slot)> onOpenSlotEditor;
+    std::function<void (int channel, ChannelDef)> onInstrumentChosen;
 
     PlaylistArea (PatternPicker& p, PlaylistComponent& l, AudioEngine& eng)
-        : engine (eng), picker (p), playlist (l), soundsDrawer (eng), lyricsDrawer (eng), fxDrawer (eng)
+        : engine (eng), picker (p), playlist (l), soundsDrawer (eng), lyricsDrawer (eng), instrumentDrawer (eng), fxDrawer (eng)
     {
         addAndMakeVisible (picker);
         addAndMakeVisible (playlist);
         addChildComponent (soundsDrawer);
         addChildComponent (lyricsDrawer);
+        addChildComponent (masteringDrawer);
+        addChildComponent (instrumentDrawer);
         addChildComponent (fxDrawer);
 
         soundsDrawer.onInsertSample = [this] (const juce::File& f) { playlist.addAudioClipAtPlayhead (f); };
         soundsDrawer.onClose = [this] { toggleSoundsDrawer (false); };
         lyricsDrawer.onClose = [this] { toggleLyricsDrawer (false); };
+        masteringDrawer.onClose = [this] { toggleMasteringDrawer (false); };
+        instrumentDrawer.onClose = [this] { toggleInstrumentDrawer (false); };
+        instrumentDrawer.onSelectInstrument = [this] (ChannelDef c) {
+            const int ch = instrumentDrawer.getTargetChannel();
+            toggleInstrumentDrawer (false);
+            if (onInstrumentChosen)
+                onInstrumentChosen (ch, std::move (c));
+        };
 
         fxDrawer.onClose = [this] { toggleFxDrawer (false); };
         fxDrawer.onOpenPianoRoll = [this] {
@@ -747,10 +760,14 @@ public:
     void toggleSoundsDrawer (bool open)
     {
         soundsOpen = open;
-        if (soundsOpen && lyricsOpen)
+        if (soundsOpen)
         {
             lyricsOpen = false;
             lyricsDrawer.setVisible (false);
+            masteringOpen = false;
+            masteringDrawer.setVisible (false);
+            instrumentOpen = false;
+            instrumentDrawer.setVisible (false);
         }
         soundsDrawer.setVisible (soundsOpen);
         if (soundsOpen)
@@ -762,10 +779,14 @@ public:
     void toggleLyricsDrawer (bool open)
     {
         lyricsOpen = open;
-        if (lyricsOpen && soundsOpen)
+        if (lyricsOpen)
         {
             soundsOpen = false;
             soundsDrawer.setVisible (false);
+            masteringOpen = false;
+            masteringDrawer.setVisible (false);
+            instrumentOpen = false;
+            instrumentDrawer.setVisible (false);
         }
         lyricsDrawer.setVisible (lyricsOpen);
         if (lyricsOpen)
@@ -773,6 +794,45 @@ public:
         resized();
         repaint();
     }
+
+    void toggleMasteringDrawer (bool open)
+    {
+        masteringOpen = open;
+        if (masteringOpen)
+        {
+            soundsOpen = false;
+            soundsDrawer.setVisible (false);
+            lyricsOpen = false;
+            lyricsDrawer.setVisible (false);
+            instrumentOpen = false;
+            instrumentDrawer.setVisible (false);
+        }
+        masteringDrawer.setVisible (masteringOpen);
+        resized();
+        repaint();
+    }
+
+    void toggleInstrumentDrawer (bool open, int targetChannel = -1)
+    {
+        instrumentOpen = open;
+        if (instrumentOpen)
+        {
+            soundsOpen = false;
+            soundsDrawer.setVisible (false);
+            lyricsOpen = false;
+            lyricsDrawer.setVisible (false);
+            masteringOpen = false;
+            masteringDrawer.setVisible (false);
+            if (targetChannel >= 0)
+                instrumentDrawer.setTargetChannel (targetChannel);
+            instrumentDrawer.refreshItems();
+        }
+        instrumentDrawer.setVisible (instrumentOpen);
+        resized();
+        repaint();
+    }
+
+    bool isMasteringDrawerOpen() const noexcept { return masteringOpen; }
 
     void toggleFxDrawer (bool open)
     {
@@ -832,6 +892,16 @@ public:
         {
             const auto top = titleLeft > 0 ? PlaylistComponent::toolbarHeight : 0;
             lyricsDrawer.setBounds (area.removeFromRight (juce::jmin (soundsDrawerWidth, area.getWidth() / 2)).withTrimmedTop (top));
+        }
+        if (masteringOpen)
+        {
+            const auto top = titleLeft > 0 ? PlaylistComponent::toolbarHeight : 0;
+            masteringDrawer.setBounds (area.removeFromRight (juce::jmin (368, area.getWidth() / 2)).withTrimmedTop (top));
+        }
+        if (instrumentOpen)
+        {
+            const auto top = titleLeft > 0 ? PlaylistComponent::toolbarHeight : 0;
+            instrumentDrawer.setBounds (area.removeFromRight (juce::jmin (470, area.getWidth() * 3 / 5)).withTrimmedTop (top));
         }
         if (fxOpen)
         {
@@ -1087,6 +1157,8 @@ private:
     PlaylistComponent& playlist;
     BandLabSoundsDrawer soundsDrawer;
     BandLabLyricsDrawer lyricsDrawer;
+    BandLabMasteringDrawer masteringDrawer;
+    BandLabInstrumentDrawer instrumentDrawer;
     BandLabFxDrawer fxDrawer;
     juce::Rectangle<int> leftPillBounds, autoPitchBounds, fxBounds, editorBounds;
     juce::Rectangle<int> rightPillBounds, lyricsBounds, soundsBounds, beatsBounds;
@@ -1094,6 +1166,8 @@ private:
     bool hadTracks = false;
     bool soundsOpen = false;
     bool lyricsOpen = false;
+    bool masteringOpen = false;
+    bool instrumentOpen = false;
     bool fxOpen = false;
     int titleLeft = 0;
     juce::Component* clipGrid = nullptr;

@@ -71,7 +71,7 @@ private:
     void showMenu();
     AudioEngine& engine;
     juce::String shown;
-    Mode mode = Mode::bars;
+    Mode mode = Mode::clock;
     int smpteRate = 5; // timecode::rates index (30 fps)
 };
 
